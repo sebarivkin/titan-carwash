@@ -265,7 +265,7 @@ tr:hover td{background:rgba(0,196,212,.02);}
       </div>
     </div>
     <div class="tw"><table>
-      <thead><tr><th>Fecha</th><th>Lavados</th><th>Ingr. lavados</th><th>Bebidas</th><th>Ingr. bebidas</th><th>Empleados</th><th>Otros egr.</th><th>Utilidad</th></tr></thead>
+      <thead><tr><th>Fecha</th><th>Lavados</th><th>Ingr. lavados</th><th>Bebidas</th><th>Ingr. bebidas</th><th>Empleados</th><th style="font-style:italic;color:var(--muted2)">Gastos ext.</th><th>Util. operativa</th></tr></thead>
       <tbody id="tbody-resumen-dias"></tbody>
     </table></div>
   </div>
@@ -915,31 +915,42 @@ function renderDashboard() {
   const h=hoy(), si=semIni(), mi=h.slice(0,7)+'-01';
   const cajaOp = cache.caja.filter(c=>c.cat!=='Saldo inicial');
 
-  // Caja real — solo movimientos efectivos (adelantos y sueldos pagados ya están en caja)
+  // Categorías operativas (día a día) vs extraordinarias (gastos del período)
+  const CATS_EXTR = ['Insumos','Servicios','Impuestos','Otro egreso','Otro ingreso'];
+  const esExtr = m => CATS_EXTR.includes(m.cat);
+  const esOper = m => !esExtr(m);
+
+  // Ingresos del día (todos)
   const ingrH  = cajaOp.filter(c=>c.fecha===h&&c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
-  const egrH   = cajaOp.filter(c=>c.fecha===h&&c.tipo==='egreso').reduce((s,c)=>s+c.monto,0);
+  // Egresos operativos del día (adelantos, sueldos — lo del día a día)
+  const egrHOper = cajaOp.filter(c=>c.fecha===h&&c.tipo==='egreso'&&esOper(c)).reduce((s,c)=>s+c.monto,0);
+  // Utilidad operativa del día
+  const utilHOper = ingrH - egrHOper;
+
   // Solo lavados de autos (excluir bebidas)
   const soloLavados = cache.lavados.filter(l=>l.cat!=='Bebida');
   const lavH   = soloLavados.filter(l=>l.fecha===h).length;
   const lavS   = soloLavados.filter(l=>l.fecha>=si&&l.fecha<=h).length;
 
-  const ingrS  = cajaOp.filter(c=>c.fecha>=si&&c.fecha<=h&&c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
-  const egrS   = cajaOp.filter(c=>c.fecha>=si&&c.fecha<=h&&c.tipo==='egreso').reduce((s,c)=>s+c.monto,0);
+  // Semana — operativo
+  const ingrS     = cajaOp.filter(c=>c.fecha>=si&&c.fecha<=h&&c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
+  const egrSOper  = cajaOp.filter(c=>c.fecha>=si&&c.fecha<=h&&c.tipo==='egreso'&&esOper(c)).reduce((s,c)=>s+c.monto,0);
 
-  const ingrM  = cajaOp.filter(c=>c.fecha>=mi&&c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
-  const egrM   = cajaOp.filter(c=>c.fecha>=mi&&c.tipo==='egreso').reduce((s,c)=>s+c.monto,0);
+  // Mes — operativo
+  const ingrM     = cajaOp.filter(c=>c.fecha>=mi&&c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
+  const egrMOper  = cajaOp.filter(c=>c.fecha>=mi&&c.tipo==='egreso'&&esOper(c)).reduce((s,c)=>s+c.monto,0);
 
-  // Saldo real en caja (solo movimientos reales, jornal NO descuenta hasta el sábado)
+  // Saldo real en caja — todos los egresos (el saldo sí se ve afectado por todo)
   const saldoBase  = cache.caja.filter(c=>c.cat==='Saldo inicial').reduce((s,c)=>s+c.monto,0);
   const totalIngr  = cajaOp.filter(c=>c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
   const totalEgr   = cajaOp.filter(c=>c.tipo==='egreso').reduce((s,c)=>s+c.monto,0);
   const saldoTotal = saldoBase + totalIngr - totalEgr;
 
-  // Banner
+  // Banner — utilidad operativa (sin gastos extraordinarios)
   document.getElementById('saldo-banner-val').textContent = fmt(saldoTotal);
   document.getElementById('saldo-ingr-hoy').textContent   = fmt(ingrH);
-  document.getElementById('saldo-egr-hoy').textContent    = fmt(egrH);
-  document.getElementById('saldo-util-hoy').textContent   = fmt(ingrH - egrH);
+  document.getElementById('saldo-egr-hoy').textContent    = fmt(egrHOper);
+  document.getElementById('saldo-util-hoy').textContent   = fmt(utilHOper);
   document.getElementById('saldo-banner').style.background =
     saldoTotal >= 0 ? 'linear-gradient(135deg,#007a88,#00c4d4)' : 'linear-gradient(135deg,#8b2020,#e05555)';
 
@@ -955,13 +966,14 @@ function renderDashboard() {
       </div>`).join('');
   } else { alertDiv.style.display = 'none'; }
 
-  // Promedios — solo lavados de autos
+  // Promedios — solo lavados, utilidad operativa
   const diasConLavados = [...new Set(soloLavados.map(l=>l.fecha))];
   const totalDias   = Math.max(1, diasConLavados.length);
   const promLavados = (soloLavados.length / totalDias).toFixed(1);
   const ingrSoloLav = cache.caja.filter(c=>c.cat==='Lavado'&&c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
   const promIngr    = Math.round(ingrSoloLav / totalDias);
-  const promUtil    = Math.round((totalIngr - totalEgr) / totalDias);
+  const totalEgrOper = cajaOp.filter(c=>c.tipo==='egreso'&&esOper(c)).reduce((s,c)=>s+c.monto,0);
+  const promUtil    = Math.round((totalIngr - totalEgrOper) / totalDias);
   const conteoSrv   = {};
   soloLavados.forEach(l=>{ conteoSrv[l.servicio]=(conteoSrv[l.servicio]||0)+1; });
   const topSrv      = Object.entries(conteoSrv).sort((a,b)=>b[1]-a[1])[0];
@@ -985,13 +997,13 @@ function renderDashboard() {
     <div class="stat"><div class="slbl">Lavados hoy</div><div class="sval c">${lavH}</div></div>
     <div class="stat"><div class="slbl">Lavados semana</div><div class="sval c">${lavS}</div></div>
     <div class="stat"><div class="slbl">Ingr. semana</div><div class="sval g">${fmt(ingrS)}</div></div>
-    <div class="stat"><div class="slbl">Egr. semana</div><div class="sval r">${fmt(egrS)}</div></div>
-    <div class="stat"><div class="slbl">Util. semana</div><div class="sval ${ingrS-egrS>=0?'g':'r'}">${fmt(ingrS-egrS)}</div></div>
+    <div class="stat"><div class="slbl">Egr. operativo sem.</div><div class="sval r">${fmt(egrSOper)}</div></div>
+    <div class="stat"><div class="slbl">Util. operativa sem.</div><div class="sval ${ingrS-egrSOper>=0?'g':'r'}">${fmt(ingrS-egrSOper)}</div></div>
     <div class="stat"><div class="slbl">Ingr. mes</div><div class="sval g">${fmt(ingrM)}</div></div>
-    <div class="stat"><div class="slbl">Util. mes</div><div class="sval ${ingrM-egrM>=0?'g':'r'}">${fmt(ingrM-egrM)}</div></div>
+    <div class="stat"><div class="slbl">Util. operativa mes</div><div class="sval ${ingrM-egrMOper>=0?'g':'r'}">${fmt(ingrM-egrMOper)}</div></div>
     <div class="stat"><div class="slbl">Prom. lavados/día</div><div class="sval c">${promLavados}</div></div>
     <div class="stat"><div class="slbl">Prom. ingr. lavados/día</div><div class="sval g">${fmt(promIngr)}</div></div>
-    <div class="stat"><div class="slbl">Prom. util./día</div><div class="sval ${promUtil>=0?'g':'r'}">${fmt(promUtil)}</div></div>
+    <div class="stat"><div class="slbl">Prom. util. operativa/día</div><div class="sval ${promUtil>=0?'g':'r'}">${fmt(promUtil)}</div></div>
     <div class="stat"><div class="slbl">Ticket prom. lavado</div><div class="sval a">${fmt(ticketProm)}</div></div>
     ${topSrv?`<div class="stat"><div class="slbl">Lavado top</div><div class="sval c" style="font-size:13px;">${topSrv[0]}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">${topSrv[1]} veces</div></div>`:''}
     <div class="stat" style="border-color:var(--amber)"><div class="slbl">A pagar empleados</div><div class="sval a">${fmt(deudaSemana)}</div><div style="font-size:10px;color:var(--muted2);margin-top:2px">rango seleccionado</div></div>
@@ -1121,6 +1133,7 @@ function renderResumenDias() {
   const f2 = document.getElementById('resumen-f2').value;
   if(!f1||!f2) return;
 
+  const CATS_EXTR = ['Insumos','Servicios','Impuestos','Otro egreso','Otro ingreso'];
   const dias = [];
   const d = new Date(f1+'T12:00'), end = new Date(f2+'T12:00');
   while(d<=end){ dias.push(d.toISOString().split('T')[0]); d.setDate(d.getDate()+1); }
@@ -1132,11 +1145,11 @@ function renderResumenDias() {
   ).reverse();
 
   if(!diasActivos.length) {
-    document.getElementById('tbody-resumen-dias').innerHTML = '<tr><td colspan="8" class="empty">Sin actividad en este período</td></tr>';
+    document.getElementById('tbody-resumen-dias').innerHTML = '<tr><td colspan="9" class="empty">Sin actividad en este período</td></tr>';
     return;
   }
 
-  let tLav=0,tILav=0,tBeb=0,tIBeb=0,tEmp=0,tOtros=0,tUtil=0;
+  let tLav=0,tILav=0,tBeb=0,tIBeb=0,tEmp=0,tExtr=0,tUtil=0;
 
   document.getElementById('tbody-resumen-dias').innerHTML = diasActivos.map(fecha => {
     const lavsDia  = cache.lavados.filter(l=>l.fecha===fecha);
@@ -1145,20 +1158,25 @@ function renderResumenDias() {
     const ingrLav  = cDia.filter(c=>c.cat==='Lavado').reduce((s,c)=>s+c.monto,0);
     const cantBeb  = lavsDia.filter(l=>l.cat==='Bebida').length;
     const ingrBeb  = cDia.filter(c=>c.cat==='Bebidas').reduce((s,c)=>s+c.monto,0);
-    // Jornal devengado ese día por asistencia
+    // Jornal devengado ese día (operativo)
     const jDia     = cache.empleados.reduce((s,e)=>
       s + ((cache.asistencia[fecha]||[]).includes(e.id) ? e.jornal : 0), 0);
-    const egrOtros = cDia.filter(c=>c.tipo==='egreso'&&c.cat!=='Sueldos'&&c.cat!=='Adelanto empleado').reduce((s,c)=>s+c.monto,0);
-    const util     = ingrLav + ingrBeb - jDia - egrOtros;
-    tLav+=cantLav; tILav+=ingrLav; tBeb+=cantBeb; tIBeb+=ingrBeb; tEmp+=jDia; tOtros+=egrOtros; tUtil+=util;
+    // Adelantos pagados ese día (operativo)
+    const adlDia   = cDia.filter(c=>c.tipo==='egreso'&&c.cat==='Adelanto empleado').reduce((s,c)=>s+c.monto,0);
+    // Gastos extraordinarios (NO afectan utilidad diaria)
+    const egrExtr  = cDia.filter(c=>c.tipo==='egreso'&&CATS_EXTR.includes(c.cat)).reduce((s,c)=>s+c.monto,0);
+    // Utilidad operativa = ingresos - jornal - adelantos (sin gastos extraordinarios)
+    const util     = ingrLav + ingrBeb - jDia - adlDia;
+    tLav+=cantLav; tILav+=ingrLav; tBeb+=cantBeb; tIBeb+=ingrBeb;
+    tEmp+=jDia+adlDia; tExtr+=egrExtr; tUtil+=util;
     return `<tr style="cursor:pointer;" onclick="verDetalleDia('${fecha}')" title="Ver detalle">
       <td><span style="color:var(--cyan);font-weight:500">${fmtDL(fecha)}</span></td>
       <td>${cantLav}</td>
       <td style="color:var(--green)">${fmt(ingrLav)}</td>
       <td>${cantBeb}</td>
       <td style="color:var(--green)">${fmt(ingrBeb)}</td>
-      <td style="color:var(--red)">${jDia>0?fmt(jDia):'—'}</td>
-      <td style="color:var(--muted)">${egrOtros>0?fmt(egrOtros):'—'}</td>
+      <td style="color:var(--red)">${jDia+adlDia>0?fmt(jDia+adlDia):'—'}</td>
+      <td style="color:var(--muted);font-style:italic">${egrExtr>0?fmt(egrExtr):'—'}</td>
       <td style="font-weight:700;color:${util>=0?'var(--green)':'var(--red)'}">${fmt(util)}</td>
     </tr>`;
   }).join('') + `<tr style="background:var(--dark3);font-weight:600;border-top:2px solid var(--border2);">
@@ -1166,7 +1184,7 @@ function renderResumenDias() {
     <td>${tLav}</td><td style="color:var(--green)">${fmt(tILav)}</td>
     <td>${tBeb}</td><td style="color:var(--green)">${fmt(tIBeb)}</td>
     <td style="color:var(--red)">${fmt(tEmp)}</td>
-    <td style="color:var(--muted)">${fmt(tOtros)}</td>
+    <td style="color:var(--muted);font-style:italic">${fmt(tExtr)}</td>
     <td style="color:${tUtil>=0?'var(--green)':'var(--red)'};font-weight:700">${fmt(tUtil)}</td>
   </tr>`;
 }
