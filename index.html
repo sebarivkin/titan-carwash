@@ -251,31 +251,10 @@ tr:hover td{background:rgba(0,196,212,.02);}
   <!-- Alertas de stock -->
   <div id="stock-alerts" style="display:none;margin-bottom:1.25rem;"></div>
 
-  <!-- Stats grid -->
+  <!-- 1. Stats grid -->
   <div class="sg" id="dash-stats"></div>
 
-  <!-- Charts row -->
-  <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:12px;margin-bottom:1.25rem;">
-    <div class="card" style="margin:0"><div class="card-hdr"><span class="card-title">Ingresos últimos 7 días</span><span style="font-size:10px;color:var(--muted)">clic en barra para ver detalle</span></div>
-      <div class="card-body"><div class="barchart" id="dash-chart"></div></div></div>
-    <div class="card" style="margin:0"><div class="card-hdr"><span class="card-title">Mix de servicios hoy</span></div>
-      <div class="card-body" id="dash-mix" style="display:flex;flex-direction:column;gap:7px;min-height:60px;"></div></div>
-  </div>
-
-  <!-- Detalle día seleccionado -->
-  <div class="card" id="dash-dia-card" style="display:none;margin-bottom:1.25rem;">
-    <div class="card-hdr">
-      <span class="card-title" id="dash-dia-titulo">Detalle del día</span>
-      <button class="btn bs" style="font-size:11px;padding:4px 10px;" onclick="cerrarDetalleDia()">✕ Cerrar</button>
-    </div>
-    <div class="tw"><table>
-      <thead><tr><th>Hora</th><th>Servicio</th><th>Categoría</th><th>Patente</th><th>Pago</th><th>Monto</th></tr></thead>
-      <tbody id="dash-dia-tbody"></tbody>
-    </table></div>
-    <div id="dash-dia-resumen" style="display:flex;gap:12px;padding:10px 14px;background:var(--dark3);border-top:1px solid var(--border);flex-wrap:wrap;"></div>
-  </div>
-
-  <!-- Tabla resumen por día -->
+  <!-- 2. Resumen por día -->
   <div class="card" style="margin-bottom:1.25rem;">
     <div class="card-hdr">
       <span class="card-title">Resumen por día</span>
@@ -291,6 +270,34 @@ tr:hover td{background:rgba(0,196,212,.02);}
     </table></div>
   </div>
 
+  <!-- 3. Empleados deuda (se rellena desde JS) -->
+  <div class="card" id="dash-emp-card" style="margin-bottom:1.25rem;">
+    <div class="card-hdr"><span class="card-title">Empleados — deuda devengada</span></div>
+    <div style="padding:2rem;text-align:center;color:var(--muted2);font-size:13px;">Cargando...</div>
+  </div>
+
+  <!-- 4. Detalle día seleccionado -->
+  <div class="card" id="dash-dia-card" style="display:none;margin-bottom:1.25rem;">
+    <div class="card-hdr">
+      <span class="card-title" id="dash-dia-titulo">Detalle del día</span>
+      <button class="btn bs" style="font-size:11px;padding:4px 10px;" onclick="cerrarDetalleDia()">✕ Cerrar</button>
+    </div>
+    <div class="tw"><table>
+      <thead><tr><th>Hora</th><th>Servicio</th><th>Categoría</th><th>Patente</th><th>Pago</th><th>Monto</th></tr></thead>
+      <tbody id="dash-dia-tbody"></tbody>
+    </table></div>
+    <div id="dash-dia-resumen" style="display:flex;gap:12px;padding:10px 14px;background:var(--dark3);border-top:1px solid var(--border);flex-wrap:wrap;"></div>
+  </div>
+
+  <!-- 5. Charts row -->
+  <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:12px;margin-bottom:1.25rem;">
+    <div class="card" style="margin:0"><div class="card-hdr"><span class="card-title">Ingresos últimos 7 días</span><span style="font-size:10px;color:var(--muted)">clic en barra para ver detalle</span></div>
+      <div class="card-body"><div class="barchart" id="dash-chart"></div></div></div>
+    <div class="card" style="margin:0"><div class="card-hdr"><span class="card-title">Mix de lavados hoy</span></div>
+      <div class="card-body" id="dash-mix" style="display:flex;flex-direction:column;gap:7px;min-height:60px;"></div></div>
+  </div>
+
+  <!-- 6. Últimos movimientos -->
   <div class="card"><div class="card-hdr"><span class="card-title">Últimos movimientos</span></div>
     <div class="tw"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Categoría</th><th>Detalle</th><th>Usuario</th><th>Monto</th></tr></thead>
     <tbody id="dash-mov"></tbody></table></div></div>
@@ -866,6 +873,9 @@ function initFields() {
   document.getElementById('cx-f2').value       = h;
   document.getElementById('sem-ini').value     = si;
   document.getElementById('sem-fin').value     = sf;
+  // Resumen por día: semana en curso por defecto
+  document.getElementById('resumen-f1').value  = si;
+  document.getElementById('resumen-f2').value  = h;
   fillAdlEmp();
 }
 
@@ -987,16 +997,8 @@ function renderDashboard() {
     <div class="stat" style="border-color:var(--amber)"><div class="slbl">A pagar empleados</div><div class="sval a">${fmt(deudaSemana)}</div><div style="font-size:10px;color:var(--muted2);margin-top:2px">rango seleccionado</div></div>
   `;
 
-  // Card empleados con selectores de fecha
-  let empCard = document.getElementById('dash-emp-card');
-  if(!empCard) {
-    const chartRow = document.getElementById('dash-chart').closest('.card').parentElement;
-    empCard = document.createElement('div');
-    empCard.id = 'dash-emp-card';
-    empCard.className = 'card';
-    empCard.style.marginBottom = '1.25rem';
-    chartRow.parentElement.insertBefore(empCard, chartRow);
-  }
+  // Card empleados — ya existe en el HTML, solo actualizar contenido
+  const empCard = document.getElementById('dash-emp-card');
   empCard.innerHTML = `
     <div class="card-hdr">
       <span class="card-title">Empleados — deuda devengada</span>
@@ -1069,6 +1071,9 @@ function renderDashboard() {
         <td style="font-weight:700;color:${m.tipo==='ingreso'?'var(--green)':'var(--red)'}">${fmt(m.monto)}</td>
       </tr>`).join('')
     : '<tr><td colspan="6" class="empty">Sin movimientos</td></tr>';
+
+  // Actualizar resumen por día
+  renderResumenDias();
 }
 
 window.verDetalleDia = function(fecha) {
