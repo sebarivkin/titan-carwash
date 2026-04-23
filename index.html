@@ -908,7 +908,10 @@ function renderDashboard() {
   // Caja real — solo movimientos efectivos (adelantos y sueldos pagados ya están en caja)
   const ingrH  = cajaOp.filter(c=>c.fecha===h&&c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
   const egrH   = cajaOp.filter(c=>c.fecha===h&&c.tipo==='egreso').reduce((s,c)=>s+c.monto,0);
-  const lavH   = cache.lavados.filter(l=>l.fecha===h).length;
+  // Solo lavados de autos (excluir bebidas)
+  const soloLavados = cache.lavados.filter(l=>l.cat!=='Bebida');
+  const lavH   = soloLavados.filter(l=>l.fecha===h).length;
+  const lavS   = soloLavados.filter(l=>l.fecha>=si&&l.fecha<=h).length;
 
   const ingrS  = cajaOp.filter(c=>c.fecha>=si&&c.fecha<=h&&c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
   const egrS   = cajaOp.filter(c=>c.fecha>=si&&c.fecha<=h&&c.tipo==='egreso').reduce((s,c)=>s+c.monto,0);
@@ -942,17 +945,17 @@ function renderDashboard() {
       </div>`).join('');
   } else { alertDiv.style.display = 'none'; }
 
-  // Promedios
-  const diasConLavados = [...new Set(cache.lavados.map(l=>l.fecha))];
+  // Promedios — solo lavados de autos
+  const diasConLavados = [...new Set(soloLavados.map(l=>l.fecha))];
   const totalDias   = Math.max(1, diasConLavados.length);
-  const promLavados = (cache.lavados.length / totalDias).toFixed(1);
-  const promIngr    = Math.round(totalIngr / totalDias);
+  const promLavados = (soloLavados.length / totalDias).toFixed(1);
+  const ingrSoloLav = cache.caja.filter(c=>c.cat==='Lavado'&&c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
+  const promIngr    = Math.round(ingrSoloLav / totalDias);
   const promUtil    = Math.round((totalIngr - totalEgr) / totalDias);
   const conteoSrv   = {};
-  cache.lavados.forEach(l=>{ conteoSrv[l.servicio]=(conteoSrv[l.servicio]||0)+1; });
+  soloLavados.forEach(l=>{ conteoSrv[l.servicio]=(conteoSrv[l.servicio]||0)+1; });
   const topSrv      = Object.entries(conteoSrv).sort((a,b)=>b[1]-a[1])[0];
-  const lavS        = cache.lavados.filter(l=>l.fecha>=si&&l.fecha<=h).length;
-  const ticketProm  = cache.lavados.length > 0 ? Math.round(totalIngr / cache.lavados.length) : 0;
+  const ticketProm  = soloLavados.length > 0 ? Math.round(ingrSoloLav / soloLavados.length) : 0;
 
   // Empleados: rango seleccionable
   const empF1 = document.getElementById('dash-emp-f1')?.value || si;
@@ -969,18 +972,18 @@ function renderDashboard() {
   });
 
   document.getElementById('dash-stats').innerHTML = `
-    <div class="stat"><div class="slbl">Servicios hoy</div><div class="sval c">${lavH}</div></div>
-    <div class="stat"><div class="slbl">Servicios semana</div><div class="sval c">${lavS}</div></div>
+    <div class="stat"><div class="slbl">Lavados hoy</div><div class="sval c">${lavH}</div></div>
+    <div class="stat"><div class="slbl">Lavados semana</div><div class="sval c">${lavS}</div></div>
     <div class="stat"><div class="slbl">Ingr. semana</div><div class="sval g">${fmt(ingrS)}</div></div>
     <div class="stat"><div class="slbl">Egr. semana</div><div class="sval r">${fmt(egrS)}</div></div>
     <div class="stat"><div class="slbl">Util. semana</div><div class="sval ${ingrS-egrS>=0?'g':'r'}">${fmt(ingrS-egrS)}</div></div>
     <div class="stat"><div class="slbl">Ingr. mes</div><div class="sval g">${fmt(ingrM)}</div></div>
     <div class="stat"><div class="slbl">Util. mes</div><div class="sval ${ingrM-egrM>=0?'g':'r'}">${fmt(ingrM-egrM)}</div></div>
-    <div class="stat"><div class="slbl">Prom. servicios/día</div><div class="sval c">${promLavados}</div></div>
-    <div class="stat"><div class="slbl">Prom. ingr./día</div><div class="sval g">${fmt(promIngr)}</div></div>
+    <div class="stat"><div class="slbl">Prom. lavados/día</div><div class="sval c">${promLavados}</div></div>
+    <div class="stat"><div class="slbl">Prom. ingr. lavados/día</div><div class="sval g">${fmt(promIngr)}</div></div>
     <div class="stat"><div class="slbl">Prom. util./día</div><div class="sval ${promUtil>=0?'g':'r'}">${fmt(promUtil)}</div></div>
-    <div class="stat"><div class="slbl">Ticket promedio</div><div class="sval a">${fmt(ticketProm)}</div></div>
-    ${topSrv?`<div class="stat"><div class="slbl">Servicio top</div><div class="sval c" style="font-size:13px;">${topSrv[0]}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">${topSrv[1]} veces</div></div>`:''}
+    <div class="stat"><div class="slbl">Ticket prom. lavado</div><div class="sval a">${fmt(ticketProm)}</div></div>
+    ${topSrv?`<div class="stat"><div class="slbl">Lavado top</div><div class="sval c" style="font-size:13px;">${topSrv[0]}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">${topSrv[1]} veces</div></div>`:''}
     <div class="stat" style="border-color:var(--amber)"><div class="slbl">A pagar empleados</div><div class="sval a">${fmt(deudaSemana)}</div><div style="font-size:10px;color:var(--muted2);margin-top:2px">rango seleccionado</div></div>
   `;
 
@@ -1023,6 +1026,49 @@ function renderDashboard() {
       </tbody>
     </table></div>
   `;
+
+  // Barras 7 días (ingresos totales, cantidad solo lavados)
+  const dias7 = [];
+  for(let i=6;i>=0;i--){ const d=new Date(); d.setDate(d.getDate()-i); dias7.push(d.toISOString().split('T')[0]); }
+  const vals7 = dias7.map(d => cajaOp.filter(c=>c.fecha===d&&c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0));
+  const lav7  = dias7.map(d => soloLavados.filter(l=>l.fecha===d).length);
+  const maxV7 = Math.max(...vals7, 1);
+  document.getElementById('dash-chart').innerHTML = dias7.map((d,i) => {
+    const hh = Math.max(3, Math.round((vals7[i]/maxV7)*90));
+    return `<div class="bc-col" onclick="verDetalleDia('${d}')" style="cursor:pointer;" title="Ver detalle de ${fmtDL(d)}">
+      <div class="bc-val">${vals7[i]>0?'$'+(vals7[i]/1000).toFixed(0)+'k':''}</div>
+      <div class="bc-bar ${i===6?'hoy':''}" style="height:${hh}px;"></div>
+      <div class="bc-lbl">${DIAS_S[new Date(d+'T12:00').getDay()]}${lav7[i]>0?'<br>'+lav7[i]:''}</div>
+    </div>`;
+  }).join('');
+
+  // Mix hoy — solo lavados de autos
+  const tipos = {};
+  soloLavados.filter(l=>l.fecha===h).forEach(l => { tipos[l.servicio]=(tipos[l.servicio]||0)+1; });
+  const tl = Math.max(1, soloLavados.filter(l=>l.fecha===h).length);
+  document.getElementById('dash-mix').innerHTML = Object.entries(tipos).length
+    ? Object.entries(tipos).sort((a,b)=>b[1]-a[1]).map(([k,v]) =>
+        `<div style="display:flex;align-items:center;gap:8px;">
+          <div style="flex:1;background:var(--dark3);border-radius:4px;height:6px;overflow:hidden;">
+            <div style="width:${Math.round(v/tl*100)}%;height:100%;background:var(--cyan);border-radius:4px;"></div>
+          </div>
+          <span style="font-size:11px;color:var(--muted);min-width:110px;">${k}</span>
+          <span style="font-size:11px;font-weight:600;">${v}</span>
+        </div>`).join('')
+    : '<span style="color:var(--muted2);font-size:12px;">Sin lavados hoy</span>';
+
+  // Últimos movimientos
+  const movs = [...cajaOp].sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||'')||0).slice(0,8);
+  document.getElementById('dash-mov').innerHTML = movs.length
+    ? movs.map(m=>`<tr>
+        <td>${fmtD(m.fecha)}</td>
+        <td><span class="badge ${m.tipo==='ingreso'?'bg_':'br_'}">${m.tipo}</span></td>
+        <td>${m.cat}</td>
+        <td style="color:var(--muted)">${m.desc||'—'}</td>
+        <td style="color:var(--muted2)">${m.user||'—'}</td>
+        <td style="font-weight:700;color:${m.tipo==='ingreso'?'var(--green)':'var(--red)'}">${fmt(m.monto)}</td>
+      </tr>`).join('')
+    : '<tr><td colspan="6" class="empty">Sin movimientos</td></tr>';
 }
 
 window.verDetalleDia = function(fecha) {
