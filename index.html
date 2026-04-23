@@ -1130,16 +1130,44 @@ window.switchTab = function(tab, btn) {
   document.getElementById('cbar').classList.remove('show');
 };
 
+// Orden de categorías y tipos
+const CAT_ORDER  = ['Moto','Auto','SUV','Camioneta','Otro'];
+const TIPO_ORDER = ['Común','Premium','Interior','Full','—'];
+
+function sortServicios(lista) {
+  return [...lista].sort((a,b) => {
+    const catA = CAT_ORDER.indexOf(a.cat);
+    const catB = CAT_ORDER.indexOf(b.cat);
+    if(catA !== catB) return (catA<0?99:catA) - (catB<0?99:catB);
+    const tipA = TIPO_ORDER.indexOf(a.tipo);
+    const tipB = TIPO_ORDER.indexOf(b.tipo);
+    return (tipA<0?99:tipA) - (tipB<0?99:tipB);
+  });
+}
+
 function renderQGrid() {
   selSrv = null;
   document.getElementById('cbar').classList.remove('show');
-  document.getElementById('qgrid-lav').innerHTML = cache.servicios.map(s => `
-    <div class="qbtn" id="q-${s.id}" onclick="selBtn('${s.id}','srv')">
+
+  // Agrupar por categoría y mostrar con separadores
+  const sorted = sortServicios(cache.servicios);
+  let html = '';
+  let lastCat = null;
+  sorted.forEach(s => {
+    if(s.cat !== lastCat) {
+      if(lastCat !== null) html += '</div>';
+      html += `<div style="grid-column:1/-1;font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:${lastCat?'8px':'0'};margin-bottom:2px;">${ICONS[s.cat]||'⭐'} ${s.cat}</div>`;
+      lastCat = s.cat;
+    }
+    html += `<div class="qbtn" id="q-${s.id}" onclick="selBtn('${s.id}','srv')">
       <div class="qico">${ICONS[s.cat]||'⭐'}</div>
       <div class="qname">${s.nombre}</div>
       <div class="qprice">${fmt(s.precio)}</div>
       <div class="qtype">${s.tipo!=='—'?s.tipo:''}</div>
-    </div>`).join('');
+    </div>`;
+  });
+  document.getElementById('qgrid-lav').innerHTML = html;
+
   document.getElementById('qgrid-beb').innerHTML = cache.bebidas.map(b => `
     <div class="qbtn" id="q-${b.id}" onclick="selBtn('${b.id}','beb')">
       <div style="margin-bottom:4px">${bebidaIcon(b.nombre, 36)}</div>
@@ -1537,7 +1565,7 @@ window.eliminarUser = async function(id) {
 };
 
 function renderSrvcfg() {
-  document.getElementById('cfg-srv').innerHTML = cache.servicios.map(s=>`
+  document.getElementById('cfg-srv').innerHTML = sortServicios(cache.servicios).map(s=>`
     <div class="srv-cfg-card">
       <div style="font-size:18px;margin-bottom:4px">${ICONS[s.cat]||'⭐'}</div>
       <div style="font-size:12px;font-weight:600;margin-bottom:3px">${s.nombre}</div>
