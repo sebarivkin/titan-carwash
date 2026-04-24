@@ -928,7 +928,9 @@ function renderDashboard() {
   const utilHOper = ingrH - egrHOper;
 
   // Solo lavados de autos (excluir bebidas)
-  const soloLavados = cache.lavados.filter(l=>l.cat!=='Bebida');
+  const soloLavados    = cache.lavados.filter(l=>l.cat!=='Bebida');
+  // Para cálculos financieros: excluir históricos importados (precio=0)
+  const lavadosConPrecio = soloLavados.filter(l=>l.precio>0);
   const lavH   = soloLavados.filter(l=>l.fecha===h).length;
   const lavS   = soloLavados.filter(l=>l.fecha>=si&&l.fecha<=h).length;
 
@@ -966,18 +968,21 @@ function renderDashboard() {
       </div>`).join('');
   } else { alertDiv.style.display = 'none'; }
 
-  // Promedios — solo lavados, utilidad operativa
-  const diasConLavados = [...new Set(soloLavados.map(l=>l.fecha))];
-  const totalDias   = Math.max(1, diasConLavados.length);
-  const promLavados = (soloLavados.length / totalDias).toFixed(1);
-  const ingrSoloLav = cache.caja.filter(c=>c.cat==='Lavado'&&c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
-  const promIngr    = Math.round(ingrSoloLav / totalDias);
-  const totalEgrOper = cajaOp.filter(c=>c.tipo==='egreso'&&esOper(c)).reduce((s,c)=>s+c.monto,0);
-  const promUtil    = Math.round((totalIngr - totalEgrOper) / totalDias);
-  const conteoSrv   = {};
+  // Promedios — cantidad usa todos los lavados, finanzas solo los que tienen precio
+  const diasConLavados  = [...new Set(soloLavados.map(l=>l.fecha))];
+  const diasConPrecio   = [...new Set(lavadosConPrecio.map(l=>l.fecha))];
+  const totalDias       = Math.max(1, diasConLavados.length);
+  const totalDiasFinanc = Math.max(1, diasConPrecio.length);
+  const promLavados     = (soloLavados.length / totalDias).toFixed(1);
+  const ingrSoloLav     = cache.caja.filter(c=>c.cat==='Lavado'&&c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
+  const promIngr        = Math.round(ingrSoloLav / totalDiasFinanc);
+  const totalEgrOper    = cajaOp.filter(c=>c.tipo==='egreso'&&esOper(c)).reduce((s,c)=>s+c.monto,0);
+  const promUtil        = Math.round((totalIngr - totalEgrOper) / totalDiasFinanc);
+  const conteoSrv       = {};
   soloLavados.forEach(l=>{ conteoSrv[l.servicio]=(conteoSrv[l.servicio]||0)+1; });
-  const topSrv      = Object.entries(conteoSrv).sort((a,b)=>b[1]-a[1])[0];
-  const ticketProm  = soloLavados.length > 0 ? Math.round(ingrSoloLav / soloLavados.length) : 0;
+  const topSrv          = Object.entries(conteoSrv).sort((a,b)=>b[1]-a[1])[0];
+  // Ticket promedio: solo lavados con precio real
+  const ticketProm      = lavadosConPrecio.length > 0 ? Math.round(ingrSoloLav / lavadosConPrecio.length) : 0;
 
   // Empleados: rango seleccionable
   const empF1 = document.getElementById('dash-emp-f1')?.value || si;
@@ -995,6 +1000,7 @@ function renderDashboard() {
 
   document.getElementById('dash-stats').innerHTML = `
     <div class="stat"><div class="slbl">Lavados hoy</div><div class="sval c">${lavH}</div></div>
+    <div class="stat" style="border-color:var(--cyan)"><div class="slbl">Lavados totales</div><div class="sval c">${soloLavados.length}</div><div style="font-size:10px;color:var(--muted2);margin-top:3px">desde el 16/03</div></div>
     <div class="stat"><div class="slbl">Lavados semana</div><div class="sval c">${lavS}</div></div>
     <div class="stat"><div class="slbl">Ingr. semana</div><div class="sval g">${fmt(ingrS)}</div></div>
     <div class="stat"><div class="slbl">Egr. operativo sem.</div><div class="sval r">${fmt(egrSOper)}</div></div>
