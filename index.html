@@ -981,7 +981,7 @@ function renderDashboard() {
 
   // Empleados: rango seleccionable
   const empF1 = document.getElementById('dash-emp-f1')?.value || si;
-  const empF2 = document.getElementById('dash-emp-f2')?.value || h;
+  const empF2 = document.getElementById('dash-emp-f2')?.value || semFin();
   const diasEmp = diasEnRango(empF1, empF2);
   let deudaSemana = 0;
   const resEmp = cache.empleados.map(e => {
