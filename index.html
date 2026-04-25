@@ -637,7 +637,8 @@ let regTab = 'lavados';  // active tab in registrar
 // Cache local (se actualiza con onSnapshot)
 let cache = {
   usuarios: [], empleados: [], servicios: [], bebidas: [],
-  lavados: [], caja: [], adelantos: [], asistencia: {}, audit: [], stockHist: []
+  lavados: [], caja: [], adelantos: [], asistencia: {}, audit: [],
+  stockHist: [], semanasPagadas: []
 };
 
 // ─── FIRESTORE HELPERS ─────────────────────────────────────────
@@ -717,7 +718,7 @@ async function initApp() {
 
 async function loadAllFromFirebase() {
   // Todas las consultas EN PARALELO — mucho más rápido
-  const [usuarios, empleados, servicios, bebidas, lavados, caja, adelantos, asistSnap, stockHist] = await Promise.all([
+  const [usuarios, empleados, servicios, bebidas, lavados, caja, adelantos, asistSnap, stockHist, semanasPagadas] = await Promise.all([
     db.collection('usuarios').get(),
     db.collection('empleados').get(),
     db.collection('servicios').get(),
@@ -727,16 +728,18 @@ async function loadAllFromFirebase() {
     db.collection('adelantos').get(),
     db.collection('asistencia').get(),
     db.collection('stockHist').get(),
+    db.collection('semanasPagadas').get(),
   ]);
 
-  cache.usuarios  = usuarios.docs.map(d=>({id:d.id,...d.data()}));
-  cache.empleados = empleados.docs.map(d=>({id:d.id,...d.data()}));
-  cache.servicios = servicios.docs.map(d=>({id:d.id,...d.data()}));
-  cache.bebidas   = bebidas.docs.map(d=>({id:d.id,...d.data()}));
-  cache.lavados   = lavados.docs.map(d=>({id:d.id,...d.data()}));
-  cache.caja      = caja.docs.map(d=>({id:d.id,...d.data()}));
-  cache.adelantos = adelantos.docs.map(d=>({id:d.id,...d.data()}));
-  cache.stockHist = stockHist.docs.map(d=>({id:d.id,...d.data()}));
+  cache.usuarios       = usuarios.docs.map(d=>({id:d.id,...d.data()}));
+  cache.empleados      = empleados.docs.map(d=>({id:d.id,...d.data()}));
+  cache.servicios      = servicios.docs.map(d=>({id:d.id,...d.data()}));
+  cache.bebidas        = bebidas.docs.map(d=>({id:d.id,...d.data()}));
+  cache.lavados        = lavados.docs.map(d=>({id:d.id,...d.data()}));
+  cache.caja           = caja.docs.map(d=>({id:d.id,...d.data()}));
+  cache.adelantos      = adelantos.docs.map(d=>({id:d.id,...d.data()}));
+  cache.stockHist      = stockHist.docs.map(d=>({id:d.id,...d.data()}));
+  cache.semanasPagadas = semanasPagadas.docs.map(d=>({id:d.id,...d.data()}));
   cache.asistencia = {};
   asistSnap.docs.forEach(d => { cache.asistencia[d.id] = d.data().empleados || []; });
 
@@ -984,18 +987,28 @@ function renderDashboard() {
   // Ticket promedio: solo lavados con precio real
   const ticketProm      = lavadosConPrecio.length > 0 ? Math.round(ingrSoloLav / lavadosConPrecio.length) : 0;
 
-  // Empleados: rango seleccionable
-  const empF1 = document.getElementById('dash-emp-f1')?.value || si;
-  const empF2 = document.getElementById('dash-emp-f2')?.value || semFin();
+  // Empleados: rango seleccionable — descontar lo ya pagado en ese rango
+  // Rango empleados: si el valor guardado es de una semana pasada, resetear a la semana actual
+  const savedF1 = document.getElementById('dash-emp-f1')?.value;
+  const savedF2 = document.getElementById('dash-emp-f2')?.value;
+  const empF1 = (savedF1 && savedF1 >= si) ? savedF1 : si;
+  const empF2 = (savedF2 && savedF2 >= si) ? savedF2 : semFin();
   const diasEmp = diasEnRango(empF1, empF2);
   let deudaSemana = 0;
   const resEmp = cache.empleados.map(e => {
-    const diasTrab = diasEmp.filter(d=>(cache.asistencia[d]||[]).includes(e.id)).length;
-    const bruto    = diasTrab * e.jornal;
-    const adlPend  = cache.adelantos.filter(a=>a.empId===e.id&&!a.pagado&&a.fecha>=empF1&&a.fecha<=empF2).reduce((s,a)=>s+a.monto,0);
-    const neto     = Math.max(0, bruto - adlPend);
-    deudaSemana   += neto;
-    return {nombre:e.nombre, diasTrab, bruto, adlPend, neto, color:e.color};
+    const diasTrab  = diasEmp.filter(d=>(cache.asistencia[d]||[]).includes(e.id)).length;
+    const bruto     = diasTrab * e.jornal;
+    const adlPend   = cache.adelantos.filter(a=>a.empId===e.id&&!a.pagado&&a.fecha>=empF1&&a.fecha<=empF2).reduce((s,a)=>s+a.monto,0);
+    // Descontar lo ya pagado por cierre de semana en este rango
+    const yaPagado  = (cache.semanasPagadas||[])
+      .filter(sp=>sp.f1>=empF1&&sp.f2<=empF2)
+      .reduce((s,sp)=>{
+        const ep = (sp.empleados||[]).find(x=>x.empId===e.id);
+        return s + (ep?ep.neto:0);
+      }, 0);
+    const neto = Math.max(0, bruto - adlPend - yaPagado);
+    deudaSemana += neto;
+    return {nombre:e.nombre, diasTrab, bruto, adlPend, yaPagado, neto, color:e.color};
   });
 
   document.getElementById('dash-stats').innerHTML = `
@@ -1027,7 +1040,7 @@ function renderDashboard() {
       </div>
     </div>
     <div class="tw"><table>
-      <thead><tr><th>Empleado</th><th>Días trabajados</th><th>Jornal devengado</th><th>Adelantos</th><th>Pendiente de pago</th></tr></thead>
+      <thead><tr><th>Empleado</th><th>Días</th><th>Jornal</th><th>Adelantos</th><th>Ya pagado</th><th>Pendiente</th></tr></thead>
       <tbody>
         ${resEmp.map(e=>`<tr>
           <td><div style="display:flex;align-items:center;gap:8px;">
@@ -1037,11 +1050,12 @@ function renderDashboard() {
           <td style="color:var(--cyan);font-weight:600">${e.diasTrab}</td>
           <td>${fmt(e.bruto)}</td>
           <td style="color:var(--red)">${e.adlPend>0?'− '+fmt(e.adlPend):'—'}</td>
-          <td style="font-weight:700;color:var(--amber)">${fmt(e.neto)}</td>
+          <td style="color:var(--green)">${e.yaPagado>0?'− '+fmt(e.yaPagado):'—'}</td>
+          <td style="font-weight:700;color:${e.neto>0?'var(--amber)':'var(--green)'}">${e.neto>0?fmt(e.neto):'✓ Pagado'}</td>
         </tr>`).join('')}
         <tr style="background:var(--dark3);border-top:1px solid var(--border2);">
-          <td colspan="4" style="font-weight:600;color:var(--muted)">Total pendiente</td>
-          <td style="font-weight:700;color:var(--amber);font-size:15px">${fmt(deudaSemana)}</td>
+          <td colspan="5" style="font-weight:600;color:var(--muted)">Total pendiente</td>
+          <td style="font-weight:700;color:${deudaSemana>0?'var(--amber)':'var(--green)'};font-size:15px">${deudaSemana>0?fmt(deudaSemana):'✓ Todo pagado'}</td>
         </tr>
       </tbody>
     </table></div>
@@ -1554,13 +1568,13 @@ window.cerrarSemana = async function() {
   const dias  = diasEnRango(f1,f2);
   if(!confirm(`¿Pagar semana del ${fmtDL(f1)} al ${fmtDL(f2)}?`)) return;
   let total = 0;
+  const pagosEmpleados = [];
   for(const e of cache.empleados) {
     const diasTrab  = dias.filter(d=>(cache.asistencia[d]||[]).includes(e.id)).length;
     const bruto     = diasTrab * e.jornal;
     const adlsPend  = cache.adelantos.filter(a=>a.empId===e.id&&!a.pagado&&a.fecha>=f1&&a.fecha<=f2);
     const adelantado= adlsPend.reduce((s,a)=>s+a.monto,0);
     const neto      = Math.max(0, bruto - adelantado);
-    // Marcar adelantos como pagados
     for(const a of adlsPend) {
       await fsUpdate('adelantos', a.id, {pagado:true});
       const ca = cache.adelantos.find(x=>x.id===a.id);
@@ -1574,7 +1588,14 @@ window.cerrarSemana = async function() {
       cache.caja.push({id:cmId, ...cm});
       total += neto;
     }
+    pagosEmpleados.push({empId:e.id, nombre:e.nombre, diasTrab, bruto, adelantado, neto});
   }
+  // Guardar semana como pagada para que el dashboard no la cuente como deuda
+  const semPagada = {f1, f2, total, fecha:hoy(), user:cu.nombre, empleados:pagosEmpleados};
+  const spId = await fsAdd('semanasPagadas', semPagada);
+  if(!cache.semanasPagadas) cache.semanasPagadas = [];
+  cache.semanasPagadas.push({id:spId, ...semPagada});
+
   await auditLog('CIERRE SEMANA', `${fmtDL(f1)} al ${fmtDL(f2)} — ${fmt(total)}`);
   renderEmpleados(); renderCaja(); renderDashboard();
   toast(`Semana cerrada — Total: ${fmt(total)}`, 'ok');
