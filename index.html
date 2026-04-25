@@ -919,9 +919,9 @@ function renderDashboard() {
   const cajaOp = cache.caja.filter(c=>c.cat!=='Saldo inicial');
 
   // Categorías operativas (día a día) vs extraordinarias (gastos del período)
-  const CATS_EXTR = ['Insumos','Servicios','Impuestos','Otro egreso','Otro ingreso'];
-  const esExtr = m => CATS_EXTR.includes(m.cat);
-  const esOper = m => !esExtr(m);
+  // Sueldos y adelantos NO cuentan como egreso operativo del día — son cierre semanal
+  const CATS_NO_DIARIO = ['Sueldos','Adelanto empleado'];
+  const esOper = m => !CATS_NO_DIARIO.includes(m.cat);
 
   // Ingresos del día (todos)
   const ingrH  = cajaOp.filter(c=>c.fecha===h&&c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
