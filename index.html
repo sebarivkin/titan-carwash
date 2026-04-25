@@ -1178,24 +1178,22 @@ function renderResumenDias() {
     const ingrLav  = cDia.filter(c=>c.cat==='Lavado').reduce((s,c)=>s+c.monto,0);
     const cantBeb  = lavsDia.filter(l=>l.cat==='Bebida').length;
     const ingrBeb  = cDia.filter(c=>c.cat==='Bebidas').reduce((s,c)=>s+c.monto,0);
-    // Jornal devengado ese día (operativo)
+    // Jornal devengado ese día — solo días trabajados × tarifa
     const jDia     = cache.empleados.reduce((s,e)=>
       s + ((cache.asistencia[fecha]||[]).includes(e.id) ? e.jornal : 0), 0);
-    // Adelantos pagados ese día (operativo)
-    const adlDia   = cDia.filter(c=>c.tipo==='egreso'&&c.cat==='Adelanto empleado').reduce((s,c)=>s+c.monto,0);
-    // Gastos extraordinarios (NO afectan utilidad diaria)
+    // Gastos extraordinarios (insumos, servicios, impuestos, etc.)
     const egrExtr  = cDia.filter(c=>c.tipo==='egreso'&&CATS_EXTR.includes(c.cat)).reduce((s,c)=>s+c.monto,0);
-    // Utilidad operativa = ingresos - jornal - adelantos (sin gastos extraordinarios)
-    const util     = ingrLav + ingrBeb - jDia - adlDia;
+    // Utilidad operativa = ingresos - jornal devengado - gastos ext.
+    const util     = ingrLav + ingrBeb - jDia - egrExtr;
     tLav+=cantLav; tILav+=ingrLav; tBeb+=cantBeb; tIBeb+=ingrBeb;
-    tEmp+=jDia+adlDia; tExtr+=egrExtr; tUtil+=util;
+    tEmp+=jDia; tExtr+=egrExtr; tUtil+=util;
     return `<tr style="cursor:pointer;" onclick="verDetalleDia('${fecha}')" title="Ver detalle">
       <td><span style="color:var(--cyan);font-weight:500">${fmtDL(fecha)}</span></td>
       <td>${cantLav}</td>
       <td style="color:var(--green)">${fmt(ingrLav)}</td>
       <td>${cantBeb}</td>
       <td style="color:var(--green)">${fmt(ingrBeb)}</td>
-      <td style="color:var(--red)">${jDia+adlDia>0?fmt(jDia+adlDia):'—'}</td>
+      <td style="color:var(--red)">${jDia>0?fmt(jDia):'—'}</td>
       <td style="color:var(--muted);font-style:italic">${egrExtr>0?fmt(egrExtr):'—'}</td>
       <td style="font-weight:700;color:${util>=0?'var(--green)':'var(--red)'}">${fmt(util)}</td>
     </tr>`;
