@@ -1202,8 +1202,8 @@ function renderResumenDias() {
       s + ((cache.asistencia[fecha]||[]).includes(e.id) ? e.jornal : 0), 0);
     // Gastos extraordinarios (insumos, servicios, impuestos, etc.)
     const egrExtr  = cDia.filter(c=>c.tipo==='egreso'&&CATS_EXTR.includes(c.cat)).reduce((s,c)=>s+c.monto,0);
-    // Utilidad operativa = ingresos - jornal devengado - gastos ext.
-    const util     = ingrLav + ingrBeb - jDia - egrExtr;
+    // Utilidad operativa = ingresos - jornal devengado (sin gastos ext.)
+    const util     = ingrLav + ingrBeb - jDia;
     tLav+=cantLav; tILav+=ingrLav; tBeb+=cantBeb; tIBeb+=ingrBeb;
     tEmp+=jDia; tExtr+=egrExtr; tUtil+=util;
     return `<tr style="cursor:pointer;" onclick="verDetalleDia('${fecha}')" title="Ver detalle">
