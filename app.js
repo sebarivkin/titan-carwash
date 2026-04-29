@@ -1,570 +1,3 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Titan Car Wash</title>
-<style>
-*{box-sizing:border-box;margin:0;padding:0;}
-:root{
-  --cyan:#00c4d4;--cyan2:#00a8b8;
-  --dark:#141b24;--dark2:#1a2333;--dark3:#212d3d;
-  --border:#2e3f55;--border2:#3a5068;
-  --text:#e8f4f8;--muted:#7a9ab0;--muted2:#4a6a80;
-  --green:#2ecc8a;--red:#e05555;--amber:#f0a030;--white:#fff;
-  --font:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
-}
-body{font-family:var(--font);background:var(--dark);color:var(--text);min-height:100vh;font-size:14px;-webkit-font-smoothing:antialiased;}
-
-/* LOADING */
-#loading-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:16px;}
-.spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--cyan);border-radius:50%;animation:spin .8s linear infinite;}
-@keyframes spin{to{transform:rotate(360deg)}}
-.loading-txt{font-size:13px;color:var(--muted);}
-
-/* LOGIN */
-#login-screen{display:none;align-items:center;justify-content:center;min-height:100vh;padding:1rem;position:relative;overflow:hidden;}
-#login-screen::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% 0%,rgba(0,196,212,.12),transparent 65%);pointer-events:none;}
-.login-box{background:var(--dark2);border:1px solid var(--border);border-radius:20px;padding:2.5rem 2rem;width:100%;max-width:390px;position:relative;z-index:1;box-shadow:0 24px 60px rgba(0,0,0,.5);}
-.login-brand{display:flex;flex-direction:column;align-items:center;margin-bottom:2rem;gap:10px;}
-.login-title{font-size:22px;font-weight:700;letter-spacing:-0.3px;color:var(--white);text-align:center;line-height:1.2;}
-.login-title span{color:var(--cyan);}
-.login-sub{font-size:11px;color:var(--muted);letter-spacing:.5px;}
-.lbl{font-size:11px;color:var(--muted);display:block;margin-bottom:5px;font-weight:500;}
-.login-box input{width:100%;background:var(--dark3);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:var(--font);font-size:14px;padding:11px 14px;outline:none;margin-bottom:13px;transition:border-color .15s;}
-.login-box input:focus{border-color:var(--cyan);}
-.login-err{color:var(--red);font-size:12px;margin-bottom:10px;display:none;text-align:center;}
-.btn-login{width:100%;background:var(--cyan);color:var(--dark);font-family:var(--font);font-size:15px;font-weight:600;padding:12px;border-radius:10px;border:none;cursor:pointer;transition:opacity .15s;}
-.btn-login:hover{opacity:.88;}
-
-/* APP */
-#app-shell{display:none;flex-direction:column;min-height:100vh;}
-header{background:var(--dark2);border-bottom:1px solid var(--border);padding:0 1.25rem;height:54px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
-.hdr-title{font-size:16px;font-weight:700;color:var(--white);letter-spacing:-0.2px;}
-.hdr-title span{color:var(--cyan);}
-.hdr-right{display:flex;align-items:center;gap:8px;}
-.sync-ind{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted2);}
-.sdot{width:7px;height:7px;border-radius:50%;background:var(--muted2);transition:all .3s;}
-.sdot.ok{background:var(--green);box-shadow:0 0 6px var(--green);}
-.sdot.err{background:var(--red);}
-.sdot.spin{background:var(--amber);animation:blink 1s infinite;}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
-.user-pill{display:flex;align-items:center;gap:6px;background:var(--dark3);border:1px solid var(--border);border-radius:20px;padding:4px 11px 4px 6px;font-size:12px;color:var(--muted);}
-.uav{width:24px;height:24px;border-radius:50%;background:var(--cyan);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--dark);}
-.btn-out{background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);font-size:11px;padding:5px 10px;cursor:pointer;font-family:var(--font);transition:all .15s;}
-.btn-out:hover{color:var(--red);border-color:var(--red);}
-
-nav{background:var(--dark2);border-bottom:1px solid var(--border);padding:.5rem 1.25rem;display:flex;gap:4px;overflow-x:auto;}
-nav button{font-family:var(--font);font-size:13px;font-weight:500;background:none;border:1px solid transparent;color:var(--muted);padding:6px 14px;border-radius:20px;cursor:pointer;white-space:nowrap;transition:all .15s;}
-nav button.active{background:var(--cyan);color:var(--dark);font-weight:600;}
-nav button:not(.active):hover{color:var(--text);border-color:var(--border2);}
-
-main{padding:1.25rem;max-width:1140px;margin:0 auto;width:100%;}
-.section{display:none;}.section.active{display:block;}
-
-/* CARDS */
-.card{background:var(--dark2);border:1px solid var(--border);border-radius:14px;overflow:hidden;margin-bottom:1.25rem;}
-.card-hdr{padding:.85rem 1.25rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;}
-.card-title{font-size:13px;font-weight:600;color:var(--cyan);letter-spacing:.1px;}
-.card-body{padding:1.25rem;}
-
-/* STATS */
-.sg{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:1.25rem;}
-.stat{background:var(--dark2);border:1px solid var(--border);border-radius:12px;padding:.9rem 1rem;}
-.slbl{font-size:10px;color:var(--muted);letter-spacing:.3px;margin-bottom:5px;font-weight:500;}
-.sval{font-size:20px;font-weight:700;line-height:1;}
-.sval.g{color:var(--green);}.sval.r{color:var(--red);}.sval.a{color:var(--amber);}.sval.c{color:var(--cyan);}
-
-/* FORM */
-.fg{display:flex;flex-direction:column;gap:5px;margin-bottom:11px;}
-input,select,textarea{background:var(--dark3);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:var(--font);font-size:13px;padding:9px 12px;outline:none;transition:border-color .15s;width:100%;}
-input:focus,select:focus{border-color:var(--cyan);}
-select option{background:var(--dark2);}
-.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
-.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;}
-.g4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;}
-.full{grid-column:1/-1;}
-.btn{font-family:var(--font);font-size:13px;font-weight:600;padding:9px 18px;border-radius:9px;cursor:pointer;border:none;transition:all .15s;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;}
-.bp{background:var(--cyan);color:var(--dark);}.bp:hover{opacity:.88;}
-.bg{background:rgba(46,204,138,.15);color:var(--green);border:1px solid rgba(46,204,138,.3);}
-.br{background:none;color:var(--red);border:1px solid rgba(224,85,85,.25);font-size:11px;padding:5px 10px;}
-.br:hover{background:rgba(224,85,85,.1);}
-.bs{background:var(--dark3);color:var(--muted);border:1px solid var(--border);}
-.form-row{display:flex;justify-content:flex-end;gap:8px;margin-top:12px;}
-
-/* TAB PILLS */
-.tab-pills{display:flex;gap:6px;margin-bottom:1rem;}
-.tab-pill{font-family:var(--font);font-size:12px;font-weight:600;padding:6px 16px;border-radius:20px;cursor:pointer;border:1px solid var(--border);background:none;color:var(--muted);transition:all .15s;}
-.tab-pill.active{background:var(--dark3);color:var(--text);border-color:var(--border2);}
-
-/* QUICK GRID */
-.qgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:8px;margin-bottom:1rem;}
-.qbtn{background:var(--dark3);border:1.5px solid var(--border);border-radius:12px;padding:12px 8px;cursor:pointer;text-align:center;transition:all .18s;display:flex;flex-direction:column;align-items:center;gap:4px;}
-.qbtn:hover{border-color:var(--cyan);background:rgba(0,196,212,.07);}
-.qbtn.sel{border-color:var(--cyan);background:rgba(0,196,212,.14);box-shadow:0 0 0 1px var(--cyan);}
-.qico{font-size:20px;}
-.qname{font-size:12px;font-weight:600;color:var(--text);line-height:1.2;}
-.qprice{font-size:14px;font-weight:700;color:var(--cyan);}
-.qtype{font-size:9px;color:var(--muted);margin-top:-2px;}
-
-/* CONFIRM BAR */
-.cbar{display:none;background:rgba(0,196,212,.08);border:1px solid var(--cyan);border-radius:10px;padding:11px 16px;margin-top:2px;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
-.cbar.show{display:flex;}
-
-/* TABLE */
-.tw{overflow-x:auto;}
-table{width:100%;border-collapse:collapse;font-size:12px;}
-th{text-align:left;font-size:10px;color:var(--muted);letter-spacing:.3px;padding:8px 13px;background:var(--dark);font-weight:600;}
-td{padding:9px 13px;border-bottom:1px solid var(--border);vertical-align:middle;}
-tr:last-child td{border-bottom:none;}
-tr:hover td{background:rgba(0,196,212,.02);}
-.empty{padding:2.5rem;text-align:center;color:var(--muted2);font-size:13px;}
-
-/* BADGE */
-.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:.2px;}
-.bc{background:rgba(0,196,212,.15);color:var(--cyan);}
-.bg_{background:rgba(46,204,138,.12);color:var(--green);}
-.ba{background:rgba(240,160,48,.12);color:var(--amber);}
-.br_{background:rgba(224,85,85,.12);color:var(--red);}
-.bw{background:rgba(232,244,248,.07);color:var(--muted);}
-
-/* EMPLEADOS */
-.emp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-bottom:1.25rem;}
-.ecard{background:var(--dark2);border:1px solid var(--border);border-radius:14px;overflow:hidden;}
-.ecard-hdr{padding:.85rem 1rem;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border);}
-.eav{width:36px;height:36px;min-width:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;}
-.ecard-body{padding:.85rem 1rem;display:flex;flex-direction:column;gap:6px;}
-.erow{display:flex;justify-content:space-between;font-size:12px;align-items:center;}
-.ecard-foot{padding:.75rem 1rem;background:var(--dark3);border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;}
-.dias-wrap{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;}
-.dia-btn{width:30px;height:30px;border-radius:50%;border:1.5px solid var(--border);background:none;color:var(--muted2);font-size:10px;font-weight:600;cursor:pointer;font-family:var(--font);transition:all .15s;display:flex;align-items:center;justify-content:center;flex-direction:column;line-height:1;}
-.dia-btn.worked{background:var(--cyan);border-color:var(--cyan);color:var(--dark);}
-.dia-btn.today{border-color:var(--amber);}
-.dia-btn:disabled{opacity:.4;cursor:default;}
-
-/* MODAL */
-.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:200;align-items:center;justify-content:center;padding:1rem;}
-.modal-bg.open{display:flex;}
-.modal{background:var(--dark2);border:1px solid var(--border2);border-radius:16px;padding:1.75rem;width:100%;max-width:460px;}
-.modal-title{font-size:15px;font-weight:700;margin-bottom:1.1rem;color:var(--cyan);}
-.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:1.25rem;}
-
-/* TOAST */
-.toast{position:fixed;bottom:1.5rem;right:1.5rem;font-size:13px;font-weight:600;padding:10px 18px;border-radius:10px;z-index:9999;transform:translateY(80px);opacity:0;transition:all .3s;font-family:var(--font);pointer-events:none;}
-.toast.show{transform:translateY(0);opacity:1;}
-.toast.ok{background:var(--green);color:#000;}.toast.err{background:var(--red);color:#fff;}.toast.warn{background:var(--amber);color:#000;}
-
-/* BAR CHART */
-.barchart{display:flex;align-items:flex-end;gap:5px;height:100px;padding-top:6px;}
-.bc-col{display:flex;flex-direction:column;align-items:center;gap:3px;flex:1;}
-.bc-bar{width:100%;border-radius:4px 4px 0 0;background:var(--cyan);min-height:3px;opacity:.6;}
-.bc-bar.hoy{opacity:1;}
-.bc-lbl{font-size:9px;color:var(--muted2);}
-.bc-val{font-size:9px;color:var(--muted);}
-
-/* SRV CFG */
-.srv-cfg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(145px,1fr));gap:8px;}
-.srv-cfg-card{background:var(--dark3);border:1px solid var(--border);border-radius:11px;padding:.85rem;}
-
-@media(max-width:640px){
-  .g2,.g3,.g4{grid-template-columns:1fr;}
-  .sg{grid-template-columns:1fr 1fr;}
-  .qgrid{grid-template-columns:repeat(2,1fr);}
-  .emp-grid{grid-template-columns:1fr;}
-}
-</style>
-</head>
-<body>
-
-<!-- LOADING -->
-<div id="loading-screen">
-  <svg width="60" height="60" viewBox="0 0 80 80">
-    <polygon points="40,4 74,22 74,58 40,76 6,58 6,22" fill="#1a2333" stroke="#00c4d4" stroke-width="2.5"/>
-    <polygon points="40,12 66,27 66,53 40,68 14,53 14,27" fill="#00c4d4"/>
-    <rect x="8" y="50" width="64" height="20" rx="3" fill="#141b24"/>
-    <text x="40" y="64" text-anchor="middle" font-family="Arial Black" font-size="10" font-weight="900" fill="white" letter-spacing="1">TITAN</text>
-  </svg>
-  <div class="spinner"></div>
-  <div class="loading-txt">Conectando con Firebase...</div>
-</div>
-
-<!-- LOGIN -->
-<div id="login-screen">
-<div class="login-box">
-  <div class="login-brand">
-    <svg width="64" height="64" viewBox="0 0 80 80">
-      <polygon points="40,4 74,22 74,58 40,76 6,58 6,22" fill="#1a2333" stroke="#00c4d4" stroke-width="2.5"/>
-      <polygon points="40,12 66,27 66,53 40,68 14,53 14,27" fill="#00c4d4"/>
-      <rect x="8" y="50" width="64" height="20" rx="3" fill="#141b24"/>
-      <text x="40" y="64" text-anchor="middle" font-family="Arial Black" font-size="10" font-weight="900" fill="white" letter-spacing="1">TITAN</text>
-    </svg>
-    <div class="login-title">Titan <span>Car Wash</span></div>
-    <div class="login-sub">Sistema de gestión</div>
-  </div>
-  <div class="login-err" id="login-err">No tenés acceso. Pedile al admin que te agregue.</div>
-  <button class="btn-login" onclick="doGoogleLogin()" style="display:flex;align-items:center;justify-content:center;gap:10px;">
-    <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20H24v8h11.3C33.6 33.1 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.7 1.1 7.8 2.9l5.7-5.7C34.1 6.5 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20c11 0 19.7-8 19.7-20 0-1.3-.1-2.7-.1-4z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.5 16 19 13 24 13c3 0 5.7 1.1 7.8 2.9l5.7-5.7C34.1 6.5 29.3 4 24 4c-7.7 0-14.3 4.4-17.7 10.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-1.9 13.5-5l-6.2-5.2C29.4 35.6 26.8 36 24 36c-5.2 0-9.6-2.9-11.7-7.2l-6.5 5C9.6 39.5 16.3 44 24 44z"/><path fill="#1976D2" d="M43.6 20H24v8h11.3c-.9 2.4-2.5 4.5-4.6 5.9l6.2 5.2C40.8 35.7 44 30.3 44 24c0-1.3-.1-2.7-.4-4z"/></svg>
-    Ingresar con Google
-  </button>
-  <div style="font-size:11px;color:var(--muted2);text-align:center;margin-top:14px;line-height:1.6;">
-    Solo pueden ingresar cuentas autorizadas por el administrador.
-  </div>
-</div>
-</div>
-
-<!-- APP -->
-<div id="app-shell">
-<header>
-  <div class="hdr-title">Titan <span>Car Wash</span></div>
-  <div class="hdr-right">
-    <div class="sync-ind"><div class="sdot ok" id="sdot"></div><span id="stxt">Firebase</span></div>
-    <div class="user-pill"><div class="uav" id="hdr-av">?</div><span id="hdr-name">—</span></div>
-    <button class="btn-out" onclick="doLogout()">Salir</button>
-  </div>
-</header>
-<nav>
-  <button class="active" onclick="go('dashboard',this)">Dashboard</button>
-  <button onclick="go('registrar',this)">Registrar</button>
-  <button onclick="go('caja',this)">Caja</button>
-  <button onclick="go('empleados',this)">Empleados</button>
-  <button onclick="go('stock',this)">Stock Bebidas</button>
-  <button onclick="go('auditoria',this)">Auditoría</button>
-  <button onclick="go('config',this)" id="nav-cfg" style="display:none">Config</button>
-</nav>
-<main>
-
-<!-- DASHBOARD -->
-<div class="section active" id="s-dashboard">
-  <!-- Saldo destacado -->
-  <div id="saldo-banner" style="background:linear-gradient(135deg,#007a88,#00c4d4);border-radius:14px;padding:1.25rem 1.5rem;margin-bottom:1.25rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
-    <div>
-      <div style="font-size:11px;color:rgba(255,255,255,.7);font-weight:600;letter-spacing:.5px;margin-bottom:4px;">SALDO EN CAJA</div>
-      <div id="saldo-banner-val" style="font-size:36px;font-weight:700;color:#fff;line-height:1;">$0</div>
-    </div>
-    <div style="display:flex;gap:20px;flex-wrap:wrap;">
-      <div style="text-align:right"><div style="font-size:10px;color:rgba(255,255,255,.6);margin-bottom:2px;">Ingresos hoy</div><div id="saldo-ingr-hoy" style="font-size:16px;font-weight:600;color:#fff;">$0</div></div>
-      <div style="text-align:right"><div style="font-size:10px;color:rgba(255,255,255,.6);margin-bottom:2px;">Egresos hoy</div><div id="saldo-egr-hoy" style="font-size:16px;font-weight:600;color:rgba(255,200,200,.9);">$0</div></div>
-      <div style="text-align:right"><div style="font-size:10px;color:rgba(255,255,255,.6);margin-bottom:2px;">Utilidad hoy</div><div id="saldo-util-hoy" style="font-size:16px;font-weight:600;color:#fff;">$0</div></div>
-    </div>
-  </div>
-
-  <!-- Alertas de stock -->
-  <div id="stock-alerts" style="display:none;margin-bottom:1.25rem;"></div>
-
-  <!-- 1. Stats grid -->
-  <div class="sg" id="dash-stats"></div>
-
-  <!-- 2. Resumen por día -->
-  <div class="card" style="margin-bottom:1.25rem;">
-    <div class="card-hdr">
-      <span class="card-title">Resumen por día</span>
-      <div style="display:flex;gap:8px;align-items:center;">
-        <input type="date" id="resumen-f1" oninput="renderResumenDias()" style="font-size:12px;padding:5px 8px;width:130px;">
-        <span style="color:var(--muted);font-size:12px;">→</span>
-        <input type="date" id="resumen-f2" oninput="renderResumenDias()" style="font-size:12px;padding:5px 8px;width:130px;">
-      </div>
-    </div>
-    <div class="tw"><table>
-      <thead><tr><th>Fecha</th><th>Lavados</th><th>Ingr. lavados</th><th>Bebidas</th><th>Ingr. bebidas</th><th>Empleados</th><th style="font-style:italic;color:var(--muted2)">Gastos ext.</th><th>Util. operativa</th></tr></thead>
-      <tbody id="tbody-resumen-dias"></tbody>
-    </table></div>
-  </div>
-
-  <!-- 3. Empleados deuda (se rellena desde JS) -->
-  <div class="card" id="dash-emp-card" style="margin-bottom:1.25rem;">
-    <div class="card-hdr"><span class="card-title">Empleados — deuda devengada</span></div>
-    <div style="padding:2rem;text-align:center;color:var(--muted2);font-size:13px;">Cargando...</div>
-  </div>
-
-  <!-- 4. Detalle día seleccionado -->
-  <div class="card" id="dash-dia-card" style="display:none;margin-bottom:1.25rem;">
-    <div class="card-hdr">
-      <span class="card-title" id="dash-dia-titulo">Detalle del día</span>
-      <button class="btn bs" style="font-size:11px;padding:4px 10px;" onclick="cerrarDetalleDia()">✕ Cerrar</button>
-    </div>
-    <div class="tw"><table>
-      <thead><tr><th>Hora</th><th>Servicio</th><th>Categoría</th><th>Patente</th><th>Pago</th><th>Monto</th></tr></thead>
-      <tbody id="dash-dia-tbody"></tbody>
-    </table></div>
-    <div id="dash-dia-resumen" style="display:flex;gap:12px;padding:10px 14px;background:var(--dark3);border-top:1px solid var(--border);flex-wrap:wrap;"></div>
-  </div>
-
-  <!-- 5. Charts row -->
-  <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:12px;margin-bottom:1.25rem;">
-    <div class="card" style="margin:0"><div class="card-hdr"><span class="card-title">Ingresos últimos 7 días</span><span style="font-size:10px;color:var(--muted)">clic en barra para ver detalle</span></div>
-      <div class="card-body"><div class="barchart" id="dash-chart"></div></div></div>
-    <div class="card" style="margin:0"><div class="card-hdr"><span class="card-title">Mix de lavados hoy</span></div>
-      <div class="card-body" id="dash-mix" style="display:flex;flex-direction:column;gap:7px;min-height:60px;"></div></div>
-  </div>
-
-  <!-- 6. Últimos movimientos -->
-  <div class="card"><div class="card-hdr"><span class="card-title">Últimos movimientos</span></div>
-    <div class="tw"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Categoría</th><th>Detalle</th><th>Usuario</th><th>Monto</th></tr></thead>
-    <tbody id="dash-mov"></tbody></table></div></div>
-</div>
-
-<!-- REGISTRAR -->
-<div class="section" id="s-registrar">
-  <div class="card">
-    <div class="card-hdr">
-      <span class="card-title">Registrar servicio</span>
-      <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
-        <div><div class="lbl">Fecha</div><input type="date" id="reg-fecha" style="width:140px;font-size:12px;padding:6px 9px;"></div>
-        <div><div class="lbl">Pago</div><select id="reg-pago" style="width:140px;font-size:12px;padding:6px 9px;"><option>Efectivo</option><option>Transferencia</option><option>Débito</option><option>Crédito</option></select></div>
-        <div><div class="lbl">Patente</div><input type="text" id="reg-patente" placeholder="ABC123" style="width:100px;font-size:12px;padding:6px 9px;text-transform:uppercase;"></div>
-      </div>
-    </div>
-    <div class="card-body">
-      <div class="tab-pills">
-        <button class="tab-pill active" onclick="switchTab('lavados',this)">Lavados</button>
-        <button class="tab-pill" onclick="switchTab('bebidas',this)">Bebidas</button>
-      </div>
-      <div id="tab-lavados"><div class="qgrid" id="qgrid-lav"></div></div>
-      <div id="tab-bebidas" style="display:none"><div class="qgrid" id="qgrid-beb"></div></div>
-      <div class="cbar" id="cbar">
-        <div>
-          <div style="font-size:13px;font-weight:600;color:var(--cyan)" id="cb-nombre">—</div>
-          <div style="font-size:20px;font-weight:700;color:var(--white)" id="cb-precio">$0</div>
-        </div>
-        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-          <div style="display:flex;flex-direction:column;gap:4px;">
-            <span style="font-size:10px;color:var(--muted);font-weight:500;">Cantidad</span>
-            <div style="display:flex;align-items:center;gap:6px;">
-              <button onclick="cambiarCantidad(-1)" style="width:28px;height:28px;border-radius:50%;border:1px solid var(--border2);background:var(--dark3);color:var(--text);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;">−</button>
-              <span id="cb-cantidad" style="font-size:18px;font-weight:700;min-width:24px;text-align:center;">1</span>
-              <button onclick="cambiarCantidad(1)" style="width:28px;height:28px;border-radius:50%;border:1px solid var(--border2);background:var(--dark3);color:var(--text);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;">+</button>
-            </div>
-          </div>
-          <!-- Campos extra para precio personalizado -->
-          <div id="custom-fields" style="display:none;gap:8px;flex-wrap:wrap;align-items:flex-end;">
-            <div style="display:flex;flex-direction:column;gap:4px;">
-              <span style="font-size:10px;color:var(--muted);font-weight:500;">Vehículo</span>
-              <select id="custom-cat" style="font-size:12px;padding:6px 9px;width:130px;">
-                <option>Moto</option><option>Auto</option><option>SUV</option><option>Camioneta</option><option>Otro</option>
-              </select>
-            </div>
-            <div style="display:flex;flex-direction:column;gap:4px;">
-              <span style="font-size:10px;color:var(--muted);font-weight:500;">Precio ($)</span>
-              <input type="number" id="custom-precio" placeholder="0" min="0" oninput="actualizarTotalCustom()"
-                style="font-size:13px;padding:7px 10px;width:130px;">
-            </div>
-            <div style="display:flex;flex-direction:column;gap:4px;">
-              <span style="font-size:10px;color:var(--muted);font-weight:500;">Descripción</span>
-              <input type="text" id="custom-desc" placeholder="Ej: Lavado completo + encerado"
-                style="font-size:12px;padding:7px 10px;width:200px;">
-            </div>
-          </div>
-          <div style="display:flex;flex-direction:column;gap:4px;">
-            <span style="font-size:10px;color:var(--muted);font-weight:500;">Total</span>
-            <span id="cb-total" style="font-size:18px;font-weight:700;color:var(--green);">$0</span>
-          </div>
-          <button class="btn bp" onclick="confirmar()" style="font-size:14px;padding:10px 26px;">Confirmar ✓</button>
-        </div>
-      </div>
-    </div>
-  </div>
-  <div class="card">
-    <div class="card-hdr"><span class="card-title">Historial</span>
-      <input type="date" id="reg-filtro" oninput="renderHistorial()" style="font-size:12px;padding:5px 8px;width:140px;"></div>
-    <div class="tw"><table><thead><tr><th>Hora</th><th>Servicio</th><th>Patente</th><th>Pago</th><th>Precio</th><th>Operador</th><th></th></tr></thead>
-    <tbody id="tbody-reg"></tbody></table></div>
-  </div>
-</div>
-
-<!-- CAJA -->
-<div class="section" id="s-caja">
-  <div class="sg" id="caja-stats"></div>
-  <div class="card">
-    <div class="card-hdr"><span class="card-title">Movimiento extraordinario</span>
-      <span style="font-size:11px;color:var(--muted)">Lavados, bebidas, adelantos y sueldos se registran automáticamente</span></div>
-    <div class="card-body">
-      <div class="g4">
-        <div class="fg"><label class="lbl">Tipo</label><select id="cx-tipo"><option value="ingreso">Ingreso</option><option value="egreso">Egreso</option></select></div>
-        <div class="fg"><label class="lbl">Categoría</label>
-          <select id="cx-cat"><option>Otro ingreso</option><option>Insumos</option><option>Servicios</option><option>Impuestos</option><option>Otro egreso</option></select></div>
-        <div class="fg"><label class="lbl">Monto ($)</label><input type="number" id="cx-monto" placeholder="0" min="0"></div>
-        <div class="fg"><label class="lbl">Fecha</label><input type="date" id="cx-fecha"></div>
-        <div class="fg full"><label class="lbl">Descripción</label><input type="text" id="cx-desc" placeholder="Detalle"></div>
-      </div>
-      <div class="form-row"><button class="btn bp" onclick="agregarMovExtraord()">Guardar</button></div>
-    </div>
-  </div>
-  <div class="card">
-    <div class="card-hdr"><span class="card-title">Todos los movimientos</span>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-        <input type="date" id="cx-f1" oninput="renderCaja()" style="font-size:12px;padding:5px 8px;width:130px;">
-        <span style="color:var(--muted);font-size:12px;">→</span>
-        <input type="date" id="cx-f2" oninput="renderCaja()" style="font-size:12px;padding:5px 8px;width:130px;">
-        <select id="cx-fcat" oninput="renderCaja()" style="font-size:12px;padding:5px 8px;width:160px;">
-          <option value="">Todas las categorías</option>
-          <option>Lavado</option><option>Bebidas</option><option>Adelanto empleado</option>
-          <option>Sueldos</option><option>Otro ingreso</option><option>Insumos</option>
-          <option>Servicios</option><option>Impuestos</option><option>Otro egreso</option>
-        </select>
-      </div>
-    </div>
-    <div class="tw"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Categoría</th><th>Descripción</th><th>Monto</th><th>Usuario</th><th></th></tr></thead>
-    <tbody id="tbody-caja"></tbody></table></div>
-  </div>
-</div>
-
-<!-- EMPLEADOS -->
-<div class="section" id="s-empleados">
-  <div class="card">
-    <div class="card-hdr"><span class="card-title">Semana en curso</span>
-      <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
-        <div><div class="lbl">Inicio</div><input type="date" id="sem-ini" oninput="renderEmpleados()" style="font-size:12px;padding:5px 8px;width:135px;"></div>
-        <div><div class="lbl">Fin</div><input type="date" id="sem-fin" oninput="renderEmpleados()" style="font-size:12px;padding:5px 8px;width:135px;"></div>
-        <button class="btn bg" onclick="cerrarSemana()" style="padding:7px 16px;font-size:12px;">Pagar semana</button>
-      </div>
-    </div>
-  </div>
-  <div class="emp-grid" id="emp-grid"></div>
-  <div class="card">
-    <div class="card-hdr"><span class="card-title">Registrar adelanto</span></div>
-    <div class="card-body">
-      <div class="g3">
-        <div class="fg"><label class="lbl">Empleado</label><select id="adl-emp"></select></div>
-        <div class="fg"><label class="lbl">Monto ($)</label><input type="number" id="adl-monto" placeholder="0" min="0"></div>
-        <div class="fg"><label class="lbl">Fecha</label><input type="date" id="adl-fecha"></div>
-      </div>
-      <div class="form-row"><button class="btn bp" onclick="registrarAdelanto()">Registrar adelanto</button></div>
-    </div>
-  </div>
-  <div class="card"><div class="card-hdr"><span class="card-title">Historial de adelantos</span></div>
-    <div class="tw"><table><thead><tr><th>Fecha</th><th>Empleado</th><th>Monto</th><th>Por</th><th>Estado</th><th></th></tr></thead>
-    <tbody id="tbody-adl"></tbody></table></div></div>
-</div>
-
-<!-- AUDITORÍA -->
-<div class="section" id="s-auditoria">
-  <div class="card"><div class="card-hdr"><span class="card-title">Registro de actividad</span>
-    <input type="text" id="audit-q" placeholder="Buscar..." oninput="renderAudit()" style="width:200px;font-size:12px;padding:5px 10px;"></div>
-    <div class="card-body" id="audit-list" style="max-height:580px;overflow-y:auto;padding:0 1.25rem;"></div></div>
-</div>
-
-<!-- CONFIG -->
-<div class="section" id="s-config">
-  <div class="card"><div class="card-hdr"><span class="card-title">Usuarios</span>
-    <button class="btn bp" style="font-size:12px;padding:6px 14px;" onclick="openM('m-user')">+ Nuevo usuario</button></div>
-    <div class="tw"><table><thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th></th></tr></thead>
-    <tbody id="tbody-users"></tbody></table></div></div>
-  <div class="card"><div class="card-hdr"><span class="card-title">Saldo inicial de caja</span></div><div class="card-body">
-      <p style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.6;">El saldo con el que arranca el negocio. Se suma como primer ingreso en el balance.</p>
-      <div class="g2">
-        <div class="fg"><label class="lbl">Monto ($)</label><input type="number" id="cfg-saldo" placeholder="0" min="0"></div>
-        <div class="fg"><label class="lbl">Fecha de inicio</label><input type="date" id="cfg-saldo-fecha"></div>
-      </div>
-      <div style="background:var(--dark3);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:var(--muted);display:none;" id="saldo-actual-wrap">
-        Saldo actual registrado: <strong id="saldo-actual-txt" style="color:var(--cyan)"></strong>
-      </div>
-      <div class="form-row"><button class="btn bp" onclick="guardarSaldoInicial()">Guardar saldo inicial</button></div>
-  </div></div>
-  <div class="card"><div class="card-hdr"><span class="card-title">Servicios de lavado</span>
-    <button class="btn bp" style="font-size:12px;padding:6px 14px;" onclick="openM('m-srv')">+ Servicio</button></div>
-    <div class="card-body"><div class="srv-cfg-grid" id="cfg-srv"></div></div></div>
-  <div class="card"><div class="card-hdr"><span class="card-title">Bebidas y stock</span>
-    <button class="btn bp" style="font-size:12px;padding:6px 14px;" onclick="openM('m-beb')">+ Bebida</button></div>
-    <div class="card-body"><div class="srv-cfg-grid" id="cfg-beb"></div></div>
-    <div style="padding:.75rem 1.25rem;border-top:1px solid var(--border);">
-      <div style="font-size:11px;color:var(--muted);margin-bottom:8px;font-weight:500;">Cargar stock</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
-        <div><div class="lbl">Bebida</div><select id="stock-beb" style="width:160px;font-size:12px;padding:6px 9px;"></select></div>
-        <div><div class="lbl">Cantidad a agregar</div><input type="number" id="stock-cant" placeholder="Ej: 24" min="1" style="width:120px;font-size:12px;padding:6px 9px;"></div>
-        <div><div class="lbl">Alerta cuando quede menos de</div><input type="number" id="stock-alerta" placeholder="Ej: 5" min="1" style="width:130px;font-size:12px;padding:6px 9px;"></div>
-        <button class="btn bp" onclick="agregarStock()" style="font-size:12px;padding:7px 16px;">Agregar stock</button>
-      </div>
-    </div>
-  </div>
-  <div class="card"><div class="card-hdr"><span class="card-title">Empleados</span>
-    <button class="btn bp" style="font-size:12px;padding:6px 14px;" onclick="openM('m-emp')">+ Empleado</button></div>
-    <div class="tw"><table><thead><tr><th>Nombre</th><th>Jornal/día</th><th></th></tr></thead>
-    <tbody id="tbody-empcfg"></tbody></table></div></div>
-</div>
-
-<!-- STOCK -->
-<div class="section" id="s-stock">
-  <!-- Alertas -->
-  <div id="stock-alerts-page" style="margin-bottom:1.25rem;"></div>
-
-  <!-- Cards de bebidas -->
-  <div id="stock-cards-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:1.25rem;"></div>
-
-  <!-- Agregar stock -->
-  <div class="card">
-    <div class="card-hdr"><span class="card-title">Agregar stock</span></div>
-    <div class="card-body">
-      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
-        <div class="fg" style="margin:0;min-width:160px;"><label class="lbl">Bebida</label><select id="stock-beb2" style="font-size:13px;padding:8px 10px;"></select></div>
-        <div class="fg" style="margin:0;min-width:120px;"><label class="lbl">Cantidad</label><input type="number" id="stock-cant2" placeholder="Ej: 24" min="1"></div>
-        <div class="fg" style="margin:0;min-width:130px;"><label class="lbl">Alerta cuando quede menos de</label><input type="number" id="stock-alerta2" placeholder="Ej: 5" min="1"></div>
-        <button class="btn bp" onclick="agregarStock2()" style="align-self:flex-end;">Agregar stock</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Historial de movimientos de stock -->
-  <div class="card">
-    <div class="card-hdr"><span class="card-title">Historial de stock</span></div>
-    <div class="tw"><table>
-      <thead><tr><th>Fecha/Hora</th><th>Bebida</th><th>Movimiento</th><th>Stock resultante</th><th>Usuario</th></tr></thead>
-      <tbody id="tbody-stock-hist"></tbody>
-    </table></div>
-  </div>
-</div>
-
-</main>
-</div>
-
-<!-- MODALES -->
-<div class="modal-bg" id="m-user"><div class="modal">
-  <div class="modal-title">Nuevo usuario</div>
-  <div class="g2">
-    <div class="fg"><label class="lbl">Nombre</label><input type="text" id="nu-nombre"></div>
-    <div class="fg"><label class="lbl">Email de Gmail</label><input type="email" id="nu-email" placeholder="ejemplo@gmail.com"></div>
-    <div class="fg"><label class="lbl">Rol</label><select id="nu-rol"><option value="admin">Admin</option><option value="operador">Operador</option></select></div>
-  </div>
-  <div class="modal-actions"><button class="btn bs" onclick="closeM('m-user')">Cancelar</button><button class="btn bp" onclick="crearUsuario()">Crear</button></div>
-</div></div>
-
-<div class="modal-bg" id="m-srv"><div class="modal">
-  <div class="modal-title">Nuevo servicio</div>
-  <div class="g2">
-    <div class="fg full"><label class="lbl">Nombre</label><input type="text" id="ns-nombre" placeholder="Ej: Auto Premium"></div>
-    <div class="fg"><label class="lbl">Precio ($)</label><input type="number" id="ns-precio" placeholder="0" min="0"></div>
-    <div class="fg"><label class="lbl">Vehículo</label><select id="ns-cat"><option>Moto</option><option>Auto</option><option>SUV</option><option>Camioneta</option><option>Otro</option></select></div>
-    <div class="fg"><label class="lbl">Tipo</label><select id="ns-tipo"><option>Común</option><option>Premium</option><option>Interior</option><option>Full</option><option>—</option></select></div>
-  </div>
-  <div class="modal-actions"><button class="btn bs" onclick="closeM('m-srv')">Cancelar</button><button class="btn bp" onclick="crearServicio()">Guardar</button></div>
-</div></div>
-
-<div class="modal-bg" id="m-beb"><div class="modal">
-  <div class="modal-title">Nueva bebida</div>
-  <div class="g2">
-    <div class="fg"><label class="lbl">Nombre</label><input type="text" id="nb-nombre" placeholder="Ej: Coca-Cola"></div>
-    <div class="fg"><label class="lbl">Precio ($)</label><input type="number" id="nb-precio" placeholder="0" min="0"></div>
-    <div class="fg"><label class="lbl">Stock inicial</label><input type="number" id="nb-stock" placeholder="0" min="0"></div>
-    <div class="fg"><label class="lbl">Alertar cuando quede menos de</label><input type="number" id="nb-alerta" placeholder="5" min="1"></div>
-  </div>
-  <div class="modal-actions"><button class="btn bs" onclick="closeM('m-beb')">Cancelar</button><button class="btn bp" onclick="crearBebida()">Guardar</button></div>
-</div></div>
-
-<div class="modal-bg" id="m-emp"><div class="modal">
-  <div class="modal-title">Nuevo empleado</div>
-  <div class="g2">
-    <div class="fg"><label class="lbl">Nombre</label><input type="text" id="ne-nombre"></div>
-    <div class="fg"><label class="lbl">Jornal/día ($)</label><input type="number" id="ne-jornal" placeholder="20000"></div>
-  </div>
-  <div class="modal-actions"><button class="btn bs" onclick="closeM('m-emp')">Cancelar</button><button class="btn bp" onclick="crearEmpleado()">Guardar</button></div>
-</div></div>
-
-<div class="toast" id="toast"></div>
-
-<!-- FIREBASE SDK -->
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-<script>
 const firebaseConfig = {
   apiKey: "AIzaSyC7CURzUFKRJOZ2A8djNwNmAd8IsjbIJks",
   authDomain: "titan-carwash.firebaseapp.com",
@@ -592,6 +25,25 @@ async function hashPass(password) {
 db.enablePersistence({ synchronizeTabs: true }).catch(err => {
   console.warn('Offline persistence no disponible:', err.code);
 });
+
+// ─── v2 UTILIDADES ─────────────────────────────────────────────
+function debounce(fn, ms) {
+  let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+}
+
+function exportCSV(headers, rows, filename) {
+  const bom = '﻿';
+  const csv = bom + [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
+  const url  = URL.createObjectURL(blob);
+  const a    = Object.assign(document.createElement('a'), {href:url, download:filename});
+  a.click(); URL.revokeObjectURL(url);
+}
+
+async function withLoading(btnEl, fn) {
+  btnEl.classList.add('loading');
+  try { await fn(); } finally { btnEl.classList.remove('loading'); }
+}
 
 // ─── HELPERS ───────────────────────────────────────────────────
 const COLORS = ['#00c4d4','#2ecc8a','#f0a030','#e05555','#60a5fa','#a78bfa','#fb923c'];
@@ -898,6 +350,9 @@ function initFields() {
   // Resumen por día: semana en curso por defecto
   document.getElementById('resumen-f1').value  = si;
   document.getElementById('resumen-f2').value  = h;
+  // Restaurar última patente usada
+  const lastPlate = localStorage.getItem('titan_last_plate');
+  if(lastPlate) document.getElementById('reg-patente').value = lastPlate;
   fillAdlEmp();
 }
 
@@ -1095,21 +550,6 @@ function renderDashboard() {
     </div>`;
   }).join('');
 
-  // Mix hoy — solo lavados de autos
-  const tipos = {};
-  soloLavados.filter(l=>l.fecha===h).forEach(l => { tipos[l.servicio]=(tipos[l.servicio]||0)+1; });
-  const tl = Math.max(1, soloLavados.filter(l=>l.fecha===h).length);
-  document.getElementById('dash-mix').innerHTML = Object.entries(tipos).length
-    ? Object.entries(tipos).sort((a,b)=>b[1]-a[1]).map(([k,v]) =>
-        `<div style="display:flex;align-items:center;gap:8px;">
-          <div style="flex:1;background:var(--dark3);border-radius:4px;height:6px;overflow:hidden;">
-            <div style="width:${Math.round(v/tl*100)}%;height:100%;background:var(--cyan);border-radius:4px;"></div>
-          </div>
-          <span style="font-size:11px;color:var(--muted);min-width:110px;">${k}</span>
-          <span style="font-size:11px;font-weight:600;">${v}</span>
-        </div>`).join('')
-    : '<span style="color:var(--muted2);font-size:12px;">Sin lavados hoy</span>';
-
   // Últimos movimientos
   const movs = [...cajaOp].sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||'')||0).slice(0,8);
   document.getElementById('dash-mov').innerHTML = movs.length
@@ -1302,7 +742,10 @@ window.selCustom = function() {
   document.getElementById('custom-precio').value = '';
   document.getElementById('custom-desc').value = '';
   document.getElementById('cbar').classList.add('show');
-  setTimeout(()=>document.getElementById('custom-precio').focus(), 100);
+  const precioInput = document.getElementById('custom-precio');
+  setTimeout(() => precioInput.focus(), 100);
+  precioInput.onkeydown = e => { if(e.key === 'Enter') { e.preventDefault(); confirmar(); } };
+  document.getElementById('custom-desc').onkeydown = e => { if(e.key === 'Enter') { e.preventDefault(); confirmar(); } };
 };
 
 window.actualizarTotalCustom = function() {
@@ -1340,6 +783,9 @@ window.cambiarCantidad = function(delta) {
 
 window.confirmar = async function() {
   if(!selSrv) { toast('Seleccioná un servicio','err'); return; }
+  const btnC = document.getElementById('btn-confirmar');
+  if(btnC && btnC.classList.contains('loading')) return;
+  if(btnC) btnC.classList.add('loading');
   const now      = new Date();
   const hora     = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
   const fechaReg = document.getElementById('reg-fecha').value || hoy();
@@ -1393,15 +839,20 @@ window.confirmar = async function() {
   await auditLog(esBebida?'BEBIDA':'SERVICIO',
     `${selSrv.nombre}${cantTxt} — ${fmt(selSrv.precio * cantidad)}${patente?' '+patente:''}${extra}`);
 
+  // Recordar última patente usada
+  if(patente) localStorage.setItem('titan_last_plate', patente);
+
   document.getElementById('reg-filtro').value = fechaReg;
   renderQGrid(); renderHistorial(); renderDashboard();
   document.getElementById('reg-patente').value = '';
+  if(btnC) btnC.classList.remove('loading');
   toast(`${selSrv.nombre}${cantTxt}${extra} — ${fmt(selSrv.precio * cantidad)}`, 'ok');
 };
 
 function renderHistorial() {
   const fecha = document.getElementById('reg-filtro').value || hoy();
   const lavs  = cache.lavados.filter(l=>l.fecha===fecha).reverse();
+  const total = lavs.reduce((s,l)=>s+l.precio,0);
   document.getElementById('tbody-reg').innerHTML = lavs.length
     ? lavs.map(l=>`<tr>
         <td>${l.hora}</td>
@@ -1411,9 +862,24 @@ function renderHistorial() {
         <td style="color:var(--green);font-weight:700">${fmt(l.precio)}</td>
         <td style="color:var(--muted2)">${l.user||'—'}</td>
         <td><button class="btn br" onclick="eliminarLavado('${l.id}','${l.fecha}',${l.precio},'${l.servicio}','${l.patente||''}')">✕</button></td>
-      </tr>`).join('')
+      </tr>`).join('') +
+      `<tr class="total-row">
+        <td colspan="4" style="color:var(--muted);">Total — ${lavs.length} registro${lavs.length!==1?'s':''}</td>
+        <td style="color:var(--green)">${fmt(total)}</td>
+        <td colspan="2"></td>
+      </tr>`
     : '<tr><td colspan="7" class="empty">Sin registros para esta fecha</td></tr>';
 }
+
+window.exportarHistorial = function() {
+  const fecha = document.getElementById('reg-filtro').value || hoy();
+  const lavs  = cache.lavados.filter(l=>l.fecha===fecha).reverse();
+  exportCSV(
+    ['Hora','Servicio','Patente','Pago','Precio','Operador'],
+    lavs.map(l=>[l.hora,l.servicio,l.patente||'',l.pago,l.precio,l.user||'']),
+    `historial-${fecha}.csv`
+  );
+};
 
 window.eliminarLavado = async function(id, fecha, precio, servicio, patente) {
   if(!confirm('¿Eliminar este registro?')) return;
@@ -1504,6 +970,45 @@ window.eliminarMov = async function(id) {
 
   auditLog('ELIMINAR MOV', `${mov?.cat||''} — ${mov?.fecha||id}`);
   renderCaja(); renderEmpleados(); renderDashboard(); toast('Eliminado','ok');
+};
+
+window.exportarCaja = function() {
+  const f1  = document.getElementById('cx-f1').value;
+  const f2  = document.getElementById('cx-f2').value;
+  const cat = document.getElementById('cx-fcat').value;
+  let movs  = [...cache.caja];
+  if(f1)  movs = movs.filter(m=>m.fecha>=f1);
+  if(f2)  movs = movs.filter(m=>m.fecha<=f2);
+  if(cat) movs = movs.filter(m=>m.cat===cat);
+  movs.sort((a,b)=>b.fecha?.localeCompare(a.fecha||'')||0);
+  exportCSV(
+    ['Fecha','Tipo','Categoría','Descripción','Monto','Usuario'],
+    movs.map(m=>[m.fecha,m.tipo,m.cat,m.desc||'',m.monto,m.user||'']),
+    `caja-${f1||'todo'}-${f2||'todo'}.csv`
+  );
+};
+
+window.setRangoCaja = function(rango) {
+  const h = hoy();
+  if(rango==='hoy')    { document.getElementById('cx-f1').value=h;   document.getElementById('cx-f2').value=h; }
+  if(rango==='semana') { document.getElementById('cx-f1').value=semIni(); document.getElementById('cx-f2').value=h; }
+  if(rango==='mes')    { document.getElementById('cx-f1').value=h.slice(0,7)+'-01'; document.getElementById('cx-f2').value=h; }
+  document.querySelectorAll('.qdate .qd').forEach(b=>b.classList.remove('on'));
+  event.target.classList.add('on');
+  renderCaja();
+};
+
+window.setRangoResumen = function(rango) {
+  const h = hoy();
+  if(rango==='semana') { document.getElementById('resumen-f1').value=semIni(); document.getElementById('resumen-f2').value=h; }
+  if(rango==='mes')    { document.getElementById('resumen-f1').value=h.slice(0,7)+'-01'; document.getElementById('resumen-f2').value=h; }
+  if(rango==='todo')   {
+    const fechas = cache.lavados.map(l=>l.fecha).concat(cache.caja.map(c=>c.fecha)).filter(Boolean);
+    if(fechas.length) { document.getElementById('resumen-f1').value=fechas.reduce((a,b)=>a<b?a:b); document.getElementById('resumen-f2').value=h; }
+  }
+  document.querySelectorAll('#s-dashboard .qdate .qd').forEach(b=>b.classList.remove('on'));
+  event.target.classList.add('on');
+  renderResumenDias();
 };
 
 // ─── EMPLEADOS ─────────────────────────────────────────────────
@@ -1666,8 +1171,7 @@ window.cerrarSemana = async function() {
 };
 
 // ─── AUDITORÍA ─────────────────────────────────────────────────
-function renderAudit() {
-  // Recargar desde Firestore para tener datos frescos
+const _renderAuditInner = debounce(function() {
   fsGet('audit').then(logs => {
     cache.audit = logs.sort((a,b)=>b.ts?.localeCompare(a.ts||'')||0);
     const q = (document.getElementById('audit-q').value||'').toLowerCase();
@@ -1688,7 +1192,9 @@ function renderAudit() {
         }).join('')
       : '<div class="empty">Sin registros</div>';
   });
-}
+}, 200);
+
+function renderAudit() { _renderAuditInner(); }
 
 // ─── CONFIG ────────────────────────────────────────────────────
 function renderUsers() {
@@ -1805,6 +1311,7 @@ window.agregarStock = async function() {
   await fsUpdate('bebidas', bebId, update);
   beb.stock = nuevoStock;
   if(alerta) beb.alertaMin = alerta;
+  await registrarStockHist(beb.nombre, cant, nuevoStock);
   auditLog('STOCK BEBIDA', `${beb.nombre} +${cant} → total: ${nuevoStock}`);
   renderBebcfg(); renderDashboard(); toast(`Stock actualizado: ${beb.nombre} = ${nuevoStock}`,'ok');
   document.getElementById('stock-cant').value='';
@@ -1975,9 +1482,17 @@ window.eliminarEmp = async function(id) {
 };
 
 // ─── MODAL / TOAST ─────────────────────────────────────────────
-window.openM  = id => document.getElementById(id).classList.add('open');
+window.openM = id => {
+  const modal = document.getElementById(id);
+  modal.classList.add('open');
+  setTimeout(() => { const first = modal.querySelector('input,select'); if(first) first.focus(); }, 60);
+};
 window.closeM = id => document.getElementById(id).classList.remove('open');
 document.addEventListener('click', e => { if(e.target.classList.contains('modal-bg')) e.target.classList.remove('open'); });
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape') document.querySelectorAll('.modal-bg.open').forEach(m => m.classList.remove('open'));
+  if(e.key === 'Enter' && !['INPUT','TEXTAREA','SELECT','BUTTON'].includes(e.target.tagName) && selSrv) confirmar();
+});
 
 let _tt;
 window.toast = function(msg, type='ok') {
@@ -1986,8 +1501,42 @@ window.toast = function(msg, type='ok') {
   clearTimeout(_tt); _tt = setTimeout(()=>el.classList.remove('show'), 3200);
 };
 
+// ─── DEV BYPASS (solo localhost / file://) ─────────────────────
+const isDev = location.protocol === 'file:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+if(isDev) {
+  // Mostrar botón de bypass en login
+  auth.onAuthStateChanged(u => {
+    if(!u) document.getElementById('dev-bypass-wrap').style.display = 'block';
+  });
+}
+
+window.devLogin = async function() {
+  document.getElementById('loading-screen').style.display = 'flex';
+  document.querySelector('.loading-txt').textContent = 'Cargando datos...';
+  try {
+    if(cache.usuarios.length === 0) await loadAllFromFirebase();
+  } catch(e) {
+    document.getElementById('loading-screen').style.display = 'none';
+    document.getElementById('login-screen').style.display   = 'flex';
+    alert('No se pudo conectar a Firestore.\n\nPosibles causas:\n1. Las reglas de Firestore requieren autenticación.\n   → Cambiá las reglas a: allow read, write: if true;\n2. Sin conexión a internet.');
+    return;
+  }
+  const adminUser = cache.usuarios.find(u => u.rol === 'admin') || cache.usuarios[0];
+  if(!adminUser) {
+    document.getElementById('loading-screen').style.display = 'none';
+    alert('No hay usuarios en la base. Revisá la conexión a Firebase.');
+    return;
+  }
+  cu = adminUser;
+  document.getElementById('hdr-name').textContent = adminUser.nombre + ' (dev)';
+  document.getElementById('hdr-av').textContent   = adminUser.nombre.charAt(0).toUpperCase();
+  document.getElementById('nav-cfg').style.display = adminUser.rol === 'admin' ? '' : 'none';
+  document.getElementById('loading-screen').style.display = 'none';
+  document.getElementById('login-screen').style.display   = 'none';
+  document.getElementById('app-shell').style.display      = 'flex';
+  initFields();
+  renderAll();
+};
+
 // ─── ARRANCAR ──────────────────────────────────────────────────
 initApp();
-</script>
-</body>
-</html>

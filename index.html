@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Titan Car Wash</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+
+<!-- LOADING -->
+<div id="loading-screen">
+  <img src="logo.png" alt="Titan Car Wash" style="width:90px;height:90px;object-fit:contain;border-radius:12px;">
+  <div class="spinner"></div>
+  <div class="loading-txt">Conectando con Firebase...</div>
+</div>
+
+<!-- LOGIN -->
+<div id="login-screen">
+<div class="login-box">
+  <div class="login-brand">
+    <img src="logo.png" alt="Titan Car Wash" style="width:110px;height:110px;object-fit:contain;border-radius:16px;">
+    <div class="login-sub" style="margin-top:4px;">Sistema de gestión</div>
+  </div>
+  <div class="login-err" id="login-err">No tenés acceso. Pedile al admin que te agregue.</div>
+  <button class="btn-login" onclick="doGoogleLogin()" style="display:flex;align-items:center;justify-content:center;gap:10px;">
+    <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20H24v8h11.3C33.6 33.1 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.7 1.1 7.8 2.9l5.7-5.7C34.1 6.5 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20c11 0 19.7-8 19.7-20 0-1.3-.1-2.7-.1-4z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.5 16 19 13 24 13c3 0 5.7 1.1 7.8 2.9l5.7-5.7C34.1 6.5 29.3 4 24 4c-7.7 0-14.3 4.4-17.7 10.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-1.9 13.5-5l-6.2-5.2C29.4 35.6 26.8 36 24 36c-5.2 0-9.6-2.9-11.7-7.2l-6.5 5C9.6 39.5 16.3 44 24 44z"/><path fill="#1976D2" d="M43.6 20H24v8h11.3c-.9 2.4-2.5 4.5-4.6 5.9l6.2 5.2C40.8 35.7 44 30.3 44 24c0-1.3-.1-2.7-.4-4z"/></svg>
+    Ingresar con Google
+  </button>
+  <div style="font-size:11px;color:var(--muted2);text-align:center;margin-top:14px;line-height:1.6;">
+    Solo pueden ingresar cuentas autorizadas por el administrador.
+  </div>
+  <!-- Solo visible en localhost / file:// -->
+  <div id="dev-bypass-wrap" style="display:none;margin-top:18px;border-top:1px solid var(--border);padding-top:14px;text-align:center;">
+    <div style="font-size:10px;color:var(--muted2);margin-bottom:8px;letter-spacing:.3px;">MODO DESARROLLO</div>
+    <button onclick="devLogin()" style="width:100%;background:var(--dark3);border:1px dashed var(--border2);border-radius:10px;color:var(--muted);font-family:var(--font);font-size:13px;padding:10px;cursor:pointer;transition:all .15s;"
+      onmouseover="this.style.borderColor='var(--amber)';this.style.color='var(--amber)'"
+      onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--muted)'">
+      🔧 Entrar sin Google (local)
+    </button>
+  </div>
+</div>
+</div>
+
+<!-- APP -->
+<div id="app-shell">
+<header>
+  <div class="hdr-title" style="display:flex;align-items:center;gap:10px;">
+    <img src="logo.png" alt="Titan" style="width:34px;height:34px;object-fit:contain;border-radius:6px;">
+    Titan <span style="color:var(--cyan);">Car Wash</span>
+  </div>
+  <div class="hdr-right">
+    <div class="sync-ind"><div class="sdot ok" id="sdot"></div><span id="stxt">Firebase</span></div>
+    <div class="user-pill"><div class="uav" id="hdr-av">?</div><span id="hdr-name">—</span></div>
+    <button class="btn-out" onclick="doLogout()">Salir</button>
+  </div>
+</header>
+<nav>
+  <button class="active" onclick="go('dashboard',this)">Dashboard</button>
+  <button onclick="go('registrar',this)">Registrar</button>
+  <button onclick="go('caja',this)">Caja</button>
+  <button onclick="go('empleados',this)">Empleados</button>
+  <button onclick="go('stock',this)">Stock Bebidas</button>
+  <button onclick="go('auditoria',this)">Auditoría</button>
+  <button onclick="go('config',this)" id="nav-cfg" style="display:none">Config</button>
+</nav>
+<main>
+
+<!-- DASHBOARD -->
+<div class="section active" id="s-dashboard">
+  <!-- Saldo destacado -->
+  <div id="saldo-banner" style="background:linear-gradient(135deg,#007a88,#00c4d4);border-radius:14px;padding:1.25rem 1.5rem;margin-bottom:1.25rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+    <div>
+      <div style="font-size:11px;color:rgba(255,255,255,.7);font-weight:600;letter-spacing:.5px;margin-bottom:4px;">SALDO EN CAJA</div>
+      <div id="saldo-banner-val" style="font-size:36px;font-weight:700;color:#fff;line-height:1;">$0</div>
+    </div>
+    <div style="display:flex;gap:20px;flex-wrap:wrap;">
+      <div style="text-align:right"><div style="font-size:10px;color:rgba(255,255,255,.6);margin-bottom:2px;">Ingresos hoy</div><div id="saldo-ingr-hoy" style="font-size:16px;font-weight:600;color:#fff;">$0</div></div>
+      <div style="text-align:right"><div style="font-size:10px;color:rgba(255,255,255,.6);margin-bottom:2px;">Egresos hoy</div><div id="saldo-egr-hoy" style="font-size:16px;font-weight:600;color:rgba(255,200,200,.9);">$0</div></div>
+      <div style="text-align:right"><div style="font-size:10px;color:rgba(255,255,255,.6);margin-bottom:2px;">Utilidad hoy</div><div id="saldo-util-hoy" style="font-size:16px;font-weight:600;color:#fff;">$0</div></div>
+    </div>
+  </div>
+
+  <!-- Alertas de stock -->
+  <div id="stock-alerts" style="display:none;margin-bottom:1.25rem;"></div>
+
+  <!-- 1. Stats grid -->
+  <div class="sg" id="dash-stats"></div>
+
+  <!-- 2. Resumen por día -->
+  <div class="card" style="margin-bottom:1.25rem;">
+    <div class="card-hdr">
+      <span class="card-title">Resumen por día</span>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <div class="qdate">
+          <button class="qd" onclick="setRangoResumen('semana')">Semana</button>
+          <button class="qd" onclick="setRangoResumen('mes')">Mes</button>
+          <button class="qd" onclick="setRangoResumen('todo')">Todo</button>
+        </div>
+        <input type="date" id="resumen-f1" oninput="renderResumenDias()" style="font-size:12px;padding:5px 8px;width:130px;">
+        <span style="color:var(--muted);font-size:12px;">→</span>
+        <input type="date" id="resumen-f2" oninput="renderResumenDias()" style="font-size:12px;padding:5px 8px;width:130px;">
+      </div>
+    </div>
+    <div class="tw"><table>
+      <thead><tr><th>Fecha</th><th>Lavados</th><th>Ingr. lavados</th><th>Bebidas</th><th>Ingr. bebidas</th><th>Empleados</th><th style="font-style:italic;color:var(--muted2)">Gastos ext.</th><th>Util. operativa</th></tr></thead>
+      <tbody id="tbody-resumen-dias"></tbody>
+    </table></div>
+  </div>
+
+  <!-- 3. Empleados deuda (se rellena desde JS) -->
+  <div class="card" id="dash-emp-card" style="margin-bottom:1.25rem;">
+    <div class="card-hdr"><span class="card-title">Empleados — deuda devengada</span></div>
+    <div style="padding:2rem;text-align:center;color:var(--muted2);font-size:13px;">Cargando...</div>
+  </div>
+
+  <!-- 4. Detalle día seleccionado -->
+  <div class="card" id="dash-dia-card" style="display:none;margin-bottom:1.25rem;">
+    <div class="card-hdr">
+      <span class="card-title" id="dash-dia-titulo">Detalle del día</span>
+      <button class="btn bs" style="font-size:11px;padding:4px 10px;" onclick="cerrarDetalleDia()">✕ Cerrar</button>
+    </div>
+    <div class="tw"><table>
+      <thead><tr><th>Hora</th><th>Servicio</th><th>Categoría</th><th>Patente</th><th>Pago</th><th>Monto</th></tr></thead>
+      <tbody id="dash-dia-tbody"></tbody>
+    </table></div>
+    <div id="dash-dia-resumen" style="display:flex;gap:12px;padding:10px 14px;background:var(--dark3);border-top:1px solid var(--border);flex-wrap:wrap;"></div>
+  </div>
+
+  <!-- 5. Charts row -->
+  <div class="card" style="margin-bottom:1.25rem;">
+    <div class="card-hdr"><span class="card-title">Ingresos últimos 7 días</span><span style="font-size:10px;color:var(--muted)">clic en barra para ver detalle</span></div>
+    <div class="card-body"><div class="barchart" id="dash-chart"></div></div>
+  </div>
+
+  <!-- 6. Últimos movimientos -->
+  <div class="card"><div class="card-hdr"><span class="card-title">Últimos movimientos</span></div>
+    <div class="tw"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Categoría</th><th>Detalle</th><th>Usuario</th><th>Monto</th></tr></thead>
+    <tbody id="dash-mov"></tbody></table></div></div>
+</div>
+
+<!-- REGISTRAR -->
+<div class="section" id="s-registrar">
+  <div class="card">
+    <div class="card-hdr">
+      <span class="card-title">Registrar servicio</span>
+      <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
+        <div><div class="lbl">Fecha</div><input type="date" id="reg-fecha" style="width:140px;font-size:12px;padding:6px 9px;"></div>
+        <div><div class="lbl">Pago</div><select id="reg-pago" style="width:140px;font-size:12px;padding:6px 9px;"><option>Efectivo</option><option>Transferencia</option><option>Débito</option><option>Crédito</option></select></div>
+        <div><div class="lbl">Patente</div><input type="text" id="reg-patente" placeholder="ABC123" style="width:100px;font-size:12px;padding:6px 9px;text-transform:uppercase;"></div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="tab-pills">
+        <button class="tab-pill active" onclick="switchTab('lavados',this)">Lavados</button>
+        <button class="tab-pill" onclick="switchTab('bebidas',this)">Bebidas</button>
+      </div>
+      <div id="tab-lavados"><div class="qgrid" id="qgrid-lav"></div></div>
+      <div id="tab-bebidas" style="display:none"><div class="qgrid" id="qgrid-beb"></div></div>
+      <div class="cbar" id="cbar">
+        <div>
+          <div style="font-size:13px;font-weight:600;color:var(--cyan)" id="cb-nombre">—</div>
+          <div style="font-size:20px;font-weight:700;color:var(--white)" id="cb-precio">$0</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <span style="font-size:10px;color:var(--muted);font-weight:500;">Cantidad</span>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <button onclick="cambiarCantidad(-1)" style="width:28px;height:28px;border-radius:50%;border:1px solid var(--border2);background:var(--dark3);color:var(--text);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;">−</button>
+              <span id="cb-cantidad" style="font-size:18px;font-weight:700;min-width:24px;text-align:center;">1</span>
+              <button onclick="cambiarCantidad(1)" style="width:28px;height:28px;border-radius:50%;border:1px solid var(--border2);background:var(--dark3);color:var(--text);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;">+</button>
+            </div>
+          </div>
+          <!-- Campos extra para precio personalizado -->
+          <div id="custom-fields" style="display:none;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+            <div style="display:flex;flex-direction:column;gap:4px;">
+              <span style="font-size:10px;color:var(--muted);font-weight:500;">Vehículo</span>
+              <select id="custom-cat" style="font-size:12px;padding:6px 9px;width:130px;">
+                <option>Moto</option><option>Auto</option><option>SUV</option><option>Camioneta</option><option>Otro</option>
+              </select>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px;">
+              <span style="font-size:10px;color:var(--muted);font-weight:500;">Precio ($)</span>
+              <input type="number" id="custom-precio" placeholder="0" min="0" oninput="actualizarTotalCustom()"
+                style="font-size:13px;padding:7px 10px;width:130px;">
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px;">
+              <span style="font-size:10px;color:var(--muted);font-weight:500;">Descripción</span>
+              <input type="text" id="custom-desc" placeholder="Ej: Lavado completo + encerado"
+                style="font-size:12px;padding:7px 10px;width:200px;">
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <span style="font-size:10px;color:var(--muted);font-weight:500;">Total</span>
+            <span id="cb-total" style="font-size:18px;font-weight:700;color:var(--green);">$0</span>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:3px;">
+            <button class="btn bp" id="btn-confirmar" onclick="confirmar()" style="font-size:14px;padding:10px 26px;">Confirmar ✓</button>
+            <span style="font-size:10px;color:var(--muted2);">o presioná <kbd>Enter</kbd></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-hdr"><span class="card-title">Historial</span>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <input type="date" id="reg-filtro" oninput="renderHistorial()" style="font-size:12px;padding:5px 8px;width:140px;">
+        <button class="btn bs" onclick="exportarHistorial()" style="font-size:11px;padding:5px 10px;">↓ CSV</button>
+      </div></div>
+    <div class="tw"><table><thead><tr><th>Hora</th><th>Servicio</th><th>Patente</th><th>Pago</th><th>Precio</th><th>Operador</th><th></th></tr></thead>
+    <tbody id="tbody-reg"></tbody></table></div>
+  </div>
+</div>
+
+<!-- CAJA -->
+<div class="section" id="s-caja">
+  <div class="sg" id="caja-stats"></div>
+  <div class="card">
+    <div class="card-hdr"><span class="card-title">Movimiento extraordinario</span>
+      <span style="font-size:11px;color:var(--muted)">Lavados, bebidas, adelantos y sueldos se registran automáticamente</span></div>
+    <div class="card-body">
+      <div class="g4">
+        <div class="fg"><label class="lbl">Tipo</label><select id="cx-tipo"><option value="ingreso">Ingreso</option><option value="egreso">Egreso</option></select></div>
+        <div class="fg"><label class="lbl">Categoría</label>
+          <select id="cx-cat"><option>Otro ingreso</option><option>Insumos</option><option>Servicios</option><option>Impuestos</option><option>Otro egreso</option></select></div>
+        <div class="fg"><label class="lbl">Monto ($)</label><input type="number" id="cx-monto" placeholder="0" min="0"></div>
+        <div class="fg"><label class="lbl">Fecha</label><input type="date" id="cx-fecha"></div>
+        <div class="fg full"><label class="lbl">Descripción</label><input type="text" id="cx-desc" placeholder="Detalle"></div>
+      </div>
+      <div class="form-row"><button class="btn bp" onclick="agregarMovExtraord()">Guardar</button></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-hdr"><span class="card-title">Todos los movimientos</span>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <div class="qdate">
+          <button class="qd" onclick="setRangoCaja('hoy')">Hoy</button>
+          <button class="qd" onclick="setRangoCaja('semana')">Semana</button>
+          <button class="qd on" onclick="setRangoCaja('mes')">Mes</button>
+        </div>
+        <input type="date" id="cx-f1" oninput="renderCaja()" style="font-size:12px;padding:5px 8px;width:130px;">
+        <span style="color:var(--muted);font-size:12px;">→</span>
+        <input type="date" id="cx-f2" oninput="renderCaja()" style="font-size:12px;padding:5px 8px;width:130px;">
+        <select id="cx-fcat" oninput="renderCaja()" style="font-size:12px;padding:5px 8px;width:160px;">
+          <option value="">Todas las categorías</option>
+          <option>Lavado</option><option>Bebidas</option><option>Adelanto empleado</option>
+          <option>Sueldos</option><option>Otro ingreso</option><option>Insumos</option>
+          <option>Servicios</option><option>Impuestos</option><option>Otro egreso</option>
+        </select>
+        <button class="btn bs" onclick="exportarCaja()" style="font-size:11px;padding:5px 10px;">↓ CSV</button>
+      </div>
+    </div>
+    <div class="tw"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Categoría</th><th>Descripción</th><th>Monto</th><th>Usuario</th><th></th></tr></thead>
+    <tbody id="tbody-caja"></tbody></table></div>
+  </div>
+</div>
+
+<!-- EMPLEADOS -->
+<div class="section" id="s-empleados">
+  <div class="card">
+    <div class="card-hdr"><span class="card-title">Semana en curso</span>
+      <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
+        <div><div class="lbl">Inicio</div><input type="date" id="sem-ini" oninput="renderEmpleados()" style="font-size:12px;padding:5px 8px;width:135px;"></div>
+        <div><div class="lbl">Fin</div><input type="date" id="sem-fin" oninput="renderEmpleados()" style="font-size:12px;padding:5px 8px;width:135px;"></div>
+        <button class="btn bg" onclick="cerrarSemana()" style="padding:7px 16px;font-size:12px;">Pagar semana</button>
+      </div>
+    </div>
+  </div>
+  <div class="emp-grid" id="emp-grid"></div>
+  <div class="card">
+    <div class="card-hdr"><span class="card-title">Registrar adelanto</span></div>
+    <div class="card-body">
+      <div class="g3">
+        <div class="fg"><label class="lbl">Empleado</label><select id="adl-emp"></select></div>
+        <div class="fg"><label class="lbl">Monto ($)</label><input type="number" id="adl-monto" placeholder="0" min="0"></div>
+        <div class="fg"><label class="lbl">Fecha</label><input type="date" id="adl-fecha"></div>
+      </div>
+      <div class="form-row"><button class="btn bp" onclick="registrarAdelanto()">Registrar adelanto</button></div>
+    </div>
+  </div>
+  <div class="card"><div class="card-hdr"><span class="card-title">Historial de adelantos</span></div>
+    <div class="tw"><table><thead><tr><th>Fecha</th><th>Empleado</th><th>Monto</th><th>Por</th><th>Estado</th><th></th></tr></thead>
+    <tbody id="tbody-adl"></tbody></table></div></div>
+</div>
+
+<!-- AUDITORÍA -->
+<div class="section" id="s-auditoria">
+  <div class="card"><div class="card-hdr"><span class="card-title">Registro de actividad</span>
+    <input type="text" id="audit-q" placeholder="Buscar..." oninput="renderAudit()" style="width:200px;font-size:12px;padding:5px 10px;"></div>
+    <div class="card-body" id="audit-list" style="max-height:580px;overflow-y:auto;padding:0 1.25rem;"></div></div>
+</div>
+
+<!-- CONFIG -->
+<div class="section" id="s-config">
+  <div class="card"><div class="card-hdr"><span class="card-title">Usuarios</span>
+    <button class="btn bp" style="font-size:12px;padding:6px 14px;" onclick="openM('m-user')">+ Nuevo usuario</button></div>
+    <div class="tw"><table><thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th></th></tr></thead>
+    <tbody id="tbody-users"></tbody></table></div></div>
+  <div class="card"><div class="card-hdr"><span class="card-title">Saldo inicial de caja</span></div><div class="card-body">
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.6;">El saldo con el que arranca el negocio. Se suma como primer ingreso en el balance.</p>
+      <div class="g2">
+        <div class="fg"><label class="lbl">Monto ($)</label><input type="number" id="cfg-saldo" placeholder="0" min="0"></div>
+        <div class="fg"><label class="lbl">Fecha de inicio</label><input type="date" id="cfg-saldo-fecha"></div>
+      </div>
+      <div style="background:var(--dark3);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:var(--muted);display:none;" id="saldo-actual-wrap">
+        Saldo actual registrado: <strong id="saldo-actual-txt" style="color:var(--cyan)"></strong>
+      </div>
+      <div class="form-row"><button class="btn bp" onclick="guardarSaldoInicial()">Guardar saldo inicial</button></div>
+  </div></div>
+  <div class="card"><div class="card-hdr"><span class="card-title">Servicios de lavado</span>
+    <button class="btn bp" style="font-size:12px;padding:6px 14px;" onclick="openM('m-srv')">+ Servicio</button></div>
+    <div class="card-body"><div class="srv-cfg-grid" id="cfg-srv"></div></div></div>
+  <div class="card"><div class="card-hdr"><span class="card-title">Bebidas y stock</span>
+    <button class="btn bp" style="font-size:12px;padding:6px 14px;" onclick="openM('m-beb')">+ Bebida</button></div>
+    <div class="card-body"><div class="srv-cfg-grid" id="cfg-beb"></div></div>
+    <div style="padding:.75rem 1.25rem;border-top:1px solid var(--border);">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px;font-weight:500;">Cargar stock</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+        <div><div class="lbl">Bebida</div><select id="stock-beb" style="width:160px;font-size:12px;padding:6px 9px;"></select></div>
+        <div><div class="lbl">Cantidad a agregar</div><input type="number" id="stock-cant" placeholder="Ej: 24" min="1" style="width:120px;font-size:12px;padding:6px 9px;"></div>
+        <div><div class="lbl">Alerta cuando quede menos de</div><input type="number" id="stock-alerta" placeholder="Ej: 5" min="1" style="width:130px;font-size:12px;padding:6px 9px;"></div>
+        <button class="btn bp" onclick="agregarStock()" style="font-size:12px;padding:7px 16px;">Agregar stock</button>
+      </div>
+    </div>
+  </div>
+  <div class="card"><div class="card-hdr"><span class="card-title">Empleados</span>
+    <button class="btn bp" style="font-size:12px;padding:6px 14px;" onclick="openM('m-emp')">+ Empleado</button></div>
+    <div class="tw"><table><thead><tr><th>Nombre</th><th>Jornal/día</th><th></th></tr></thead>
+    <tbody id="tbody-empcfg"></tbody></table></div></div>
+</div>
+
+<!-- STOCK -->
+<div class="section" id="s-stock">
+  <!-- Alertas -->
+  <div id="stock-alerts-page" style="margin-bottom:1.25rem;"></div>
+
+  <!-- Cards de bebidas -->
+  <div id="stock-cards-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:1.25rem;"></div>
+
+  <!-- Agregar stock -->
+  <div class="card">
+    <div class="card-hdr"><span class="card-title">Agregar stock</span></div>
+    <div class="card-body">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+        <div class="fg" style="margin:0;min-width:160px;"><label class="lbl">Bebida</label><select id="stock-beb2" style="font-size:13px;padding:8px 10px;"></select></div>
+        <div class="fg" style="margin:0;min-width:120px;"><label class="lbl">Cantidad</label><input type="number" id="stock-cant2" placeholder="Ej: 24" min="1"></div>
+        <div class="fg" style="margin:0;min-width:130px;"><label class="lbl">Alerta cuando quede menos de</label><input type="number" id="stock-alerta2" placeholder="Ej: 5" min="1"></div>
+        <button class="btn bp" onclick="agregarStock2()" style="align-self:flex-end;">Agregar stock</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Historial de movimientos de stock -->
+  <div class="card">
+    <div class="card-hdr"><span class="card-title">Historial de stock</span></div>
+    <div class="tw"><table>
+      <thead><tr><th>Fecha/Hora</th><th>Bebida</th><th>Movimiento</th><th>Stock resultante</th><th>Usuario</th></tr></thead>
+      <tbody id="tbody-stock-hist"></tbody>
+    </table></div>
+  </div>
+</div>
+
+</main>
+</div>
+
+<!-- MODALES -->
+<div class="modal-bg" id="m-user"><div class="modal">
+  <div class="modal-title">Nuevo usuario</div>
+  <div class="g2">
+    <div class="fg"><label class="lbl">Nombre</label><input type="text" id="nu-nombre"></div>
+    <div class="fg"><label class="lbl">Email de Gmail</label><input type="email" id="nu-email" placeholder="ejemplo@gmail.com"></div>
+    <div class="fg"><label class="lbl">Rol</label><select id="nu-rol"><option value="admin">Admin</option><option value="operador">Operador</option></select></div>
+  </div>
+  <div class="modal-actions"><button class="btn bs" onclick="closeM('m-user')">Cancelar</button><button class="btn bp" onclick="crearUsuario()">Crear</button></div>
+</div></div>
+
+<div class="modal-bg" id="m-srv"><div class="modal">
+  <div class="modal-title">Nuevo servicio</div>
+  <div class="g2">
+    <div class="fg full"><label class="lbl">Nombre</label><input type="text" id="ns-nombre" placeholder="Ej: Auto Premium"></div>
+    <div class="fg"><label class="lbl">Precio ($)</label><input type="number" id="ns-precio" placeholder="0" min="0"></div>
+    <div class="fg"><label class="lbl">Vehículo</label><select id="ns-cat"><option>Moto</option><option>Auto</option><option>SUV</option><option>Camioneta</option><option>Otro</option></select></div>
+    <div class="fg"><label class="lbl">Tipo</label><select id="ns-tipo"><option>Común</option><option>Premium</option><option>Interior</option><option>Full</option><option>—</option></select></div>
+  </div>
+  <div class="modal-actions"><button class="btn bs" onclick="closeM('m-srv')">Cancelar</button><button class="btn bp" onclick="crearServicio()">Guardar</button></div>
+</div></div>
+
+<div class="modal-bg" id="m-beb"><div class="modal">
+  <div class="modal-title">Nueva bebida</div>
+  <div class="g2">
+    <div class="fg"><label class="lbl">Nombre</label><input type="text" id="nb-nombre" placeholder="Ej: Coca-Cola"></div>
+    <div class="fg"><label class="lbl">Precio ($)</label><input type="number" id="nb-precio" placeholder="0" min="0"></div>
+    <div class="fg"><label class="lbl">Stock inicial</label><input type="number" id="nb-stock" placeholder="0" min="0"></div>
+    <div class="fg"><label class="lbl">Alertar cuando quede menos de</label><input type="number" id="nb-alerta" placeholder="5" min="1"></div>
+  </div>
+  <div class="modal-actions"><button class="btn bs" onclick="closeM('m-beb')">Cancelar</button><button class="btn bp" onclick="crearBebida()">Guardar</button></div>
+</div></div>
+
+<div class="modal-bg" id="m-emp"><div class="modal">
+  <div class="modal-title">Nuevo empleado</div>
+  <div class="g2">
+    <div class="fg"><label class="lbl">Nombre</label><input type="text" id="ne-nombre"></div>
+    <div class="fg"><label class="lbl">Jornal/día ($)</label><input type="number" id="ne-jornal" placeholder="20000"></div>
+  </div>
+  <div class="modal-actions"><button class="btn bs" onclick="closeM('m-emp')">Cancelar</button><button class="btn bp" onclick="crearEmpleado()">Guardar</button></div>
+</div></div>
+
+<div class="toast" id="toast"></div>
+
+
+<div class="toast" id="toast"></div>
+
+<!-- FIREBASE SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
