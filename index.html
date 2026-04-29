@@ -335,6 +335,25 @@ tr:hover td{background:rgba(0,196,212,.02);}
               <button onclick="cambiarCantidad(1)" style="width:28px;height:28px;border-radius:50%;border:1px solid var(--border2);background:var(--dark3);color:var(--text);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;">+</button>
             </div>
           </div>
+          <!-- Campos extra para precio personalizado -->
+          <div id="custom-fields" style="display:none;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+            <div style="display:flex;flex-direction:column;gap:4px;">
+              <span style="font-size:10px;color:var(--muted);font-weight:500;">Vehículo</span>
+              <select id="custom-cat" style="font-size:12px;padding:6px 9px;width:130px;">
+                <option>Moto</option><option>Auto</option><option>SUV</option><option>Camioneta</option><option>Otro</option>
+              </select>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px;">
+              <span style="font-size:10px;color:var(--muted);font-weight:500;">Precio ($)</span>
+              <input type="number" id="custom-precio" placeholder="0" min="0" oninput="actualizarTotalCustom()"
+                style="font-size:13px;padding:7px 10px;width:130px;">
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px;">
+              <span style="font-size:10px;color:var(--muted);font-weight:500;">Descripción</span>
+              <input type="text" id="custom-desc" placeholder="Ej: Lavado completo + encerado"
+                style="font-size:12px;padding:7px 10px;width:200px;">
+            </div>
+          </div>
           <div style="display:flex;flex-direction:column;gap:4px;">
             <span style="font-size:10px;color:var(--muted);font-weight:500;">Total</span>
             <span id="cb-total" style="font-size:18px;font-weight:700;color:var(--green);">$0</span>
@@ -1253,6 +1272,13 @@ function renderQGrid() {
       <div class="qtype">${s.tipo!=='—'?s.tipo:''}</div>
     </div>`;
   });
+  // Botón precio personalizado
+  html += `<div style="grid-column:1/-1;font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:8px;margin-bottom:2px;">✏️ Personalizado</div>`;
+  html += `<div class="qbtn" id="q-custom" onclick="selCustom()" style="border-style:dashed;border-color:var(--cyan);grid-column:span 2;">
+    <div class="qico">✏️</div>
+    <div class="qname">Precio personalizado</div>
+    <div class="qtype">Elegís vehículo y precio</div>
+  </div>`;
   document.getElementById('qgrid-lav').innerHTML = html;
 
   document.getElementById('qgrid-beb').innerHTML = cache.bebidas.map(b => `
@@ -1264,6 +1290,28 @@ function renderQGrid() {
     </div>`).join('');
 }
 
+window.selCustom = function() {
+  document.querySelectorAll('.qbtn').forEach(b => b.classList.remove('sel'));
+  document.getElementById('q-custom').classList.add('sel');
+  selSrv = {_tipo:'custom', nombre:'Precio personalizado', precio:0, cat:'Auto'};
+  document.getElementById('cb-nombre').textContent = 'Precio personalizado';
+  document.getElementById('cb-precio').textContent = '';
+  document.getElementById('cb-cantidad').textContent = '1';
+  document.getElementById('cb-total').textContent = '$0';
+  document.getElementById('custom-fields').style.display = 'flex';
+  document.getElementById('custom-precio').value = '';
+  document.getElementById('custom-desc').value = '';
+  document.getElementById('cbar').classList.add('show');
+  setTimeout(()=>document.getElementById('custom-precio').focus(), 100);
+};
+
+window.actualizarTotalCustom = function() {
+  const precio = Number(document.getElementById('custom-precio').value) || 0;
+  const cant   = parseInt(document.getElementById('cb-cantidad').textContent) || 1;
+  document.getElementById('cb-total').textContent = fmt(precio * cant);
+  if(selSrv && selSrv._tipo === 'custom') selSrv.precio = precio;
+};
+
 window.selBtn = function(id, tipo) {
   document.querySelectorAll('.qbtn').forEach(b => b.classList.remove('sel'));
   const item = tipo==='srv' ? cache.servicios.find(s=>s.id===id) : cache.bebidas.find(b=>b.id===id);
@@ -1274,6 +1322,7 @@ window.selBtn = function(id, tipo) {
   document.getElementById('cb-precio').textContent = fmt(item.precio);
   document.getElementById('cb-cantidad').textContent = '1';
   document.getElementById('cb-total').textContent = fmt(item.precio);
+  document.getElementById('custom-fields').style.display = 'none';
   document.getElementById('cbar').classList.add('show');
 };
 
@@ -1281,7 +1330,12 @@ window.cambiarCantidad = function(delta) {
   const el = document.getElementById('cb-cantidad');
   let cant = Math.max(1, Math.min(20, parseInt(el.textContent) + delta));
   el.textContent = cant;
-  if(selSrv) document.getElementById('cb-total').textContent = fmt(selSrv.precio * cant);
+  if(selSrv && selSrv._tipo === 'custom') {
+    const precio = Number(document.getElementById('custom-precio').value) || 0;
+    document.getElementById('cb-total').textContent = fmt(precio * cant);
+  } else if(selSrv) {
+    document.getElementById('cb-total').textContent = fmt(selSrv.precio * cant);
+  }
 };
 
 window.confirmar = async function() {
@@ -1293,7 +1347,19 @@ window.confirmar = async function() {
   const pago     = document.getElementById('reg-pago').value;
   const esHoy    = fechaReg === hoy();
   const esBebida = selSrv._tipo === 'beb';
+  const esCustom = selSrv._tipo === 'custom';
   const cantidad = parseInt(document.getElementById('cb-cantidad').textContent) || 1;
+
+  // Para precio personalizado, leer campos extra
+  if(esCustom) {
+    const precioCustom = Number(document.getElementById('custom-precio').value);
+    const descCustom   = document.getElementById('custom-desc').value.trim();
+    const catCustom    = document.getElementById('custom-cat').value;
+    if(!precioCustom) { toast('Ingresá el precio','err'); return; }
+    selSrv.precio  = precioCustom;
+    selSrv.cat     = catCustom;
+    selSrv.nombre  = descCustom || `${catCustom} — precio personalizado`;
+  }
 
   for(let i = 0; i < cantidad; i++) {
     const lv = {fecha:fechaReg, hora:esHoy?hora:'—', servicio:selSrv.nombre,
