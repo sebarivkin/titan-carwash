@@ -350,6 +350,9 @@ function initFields() {
   // Resumen por día: semana en curso por defecto
   document.getElementById('resumen-f1').value  = si;
   document.getElementById('resumen-f2').value  = h;
+  // Flujo de caja diario: mes en curso por defecto
+  document.getElementById('flujo-f1').value    = `${h.slice(0,7)}-01`;
+  document.getElementById('flujo-f2').value    = h;
   // Restaurar última patente usada
   const lastPlate = localStorage.getItem('titan_last_plate');
   if(lastPlate) document.getElementById('reg-patente').value = lastPlate;
@@ -397,10 +400,10 @@ function renderDashboard() {
   const CATS_NO_DIARIO = ['Sueldos','Adelanto empleado'];
   const esOper = m => !CATS_NO_DIARIO.includes(m.cat);
 
-  // Ingresos del día (todos)
-  const ingrH  = cajaOp.filter(c=>c.fecha===h&&c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
-  // Egresos operativos del día (adelantos, sueldos — lo del día a día)
-  const egrHOper = cajaOp.filter(c=>c.fecha===h&&c.tipo==='egreso'&&esOper(c)).reduce((s,c)=>s+c.monto,0);
+  // Ingresos hoy: solo lavados + bebidas (cash real del servicio)
+  const ingrH = cajaOp.filter(c=>c.fecha===h&&c.tipo==='ingreso'&&(c.cat==='Lavado'||c.cat==='Bebidas')).reduce((s,c)=>s+c.monto,0);
+  // Egresos hoy: jornales devengados según asistencia (costo real del día)
+  const egrHOper = cache.empleados.reduce((s,e)=>s+((cache.asistencia[h]||[]).includes(e.id)?e.jornal:0),0);
   // Utilidad operativa del día
   const utilHOper = ingrH - egrHOper;
 
@@ -480,8 +483,8 @@ function renderDashboard() {
         const ep = (sp.empleados||[]).find(x=>x.empId===e.id);
         return s + (ep?ep.neto:0);
       }, 0);
-    const neto = Math.max(0, bruto - adlPend - yaPagado);
-    deudaSemana += neto;
+    const neto = bruto - adlPend - yaPagado;
+    deudaSemana += Math.max(0, neto);
     return {nombre:e.nombre, diasTrab, bruto, adlPend, yaPagado, neto, color:e.color};
   });
 
@@ -525,11 +528,14 @@ function renderDashboard() {
           <td>${fmt(e.bruto)}</td>
           <td style="color:var(--red)">${e.adlPend>0?'− '+fmt(e.adlPend):'—'}</td>
           <td style="color:var(--green)">${e.yaPagado>0?'− '+fmt(e.yaPagado):'—'}</td>
-          <td style="font-weight:700;color:${e.neto>0?'var(--amber)':'var(--green)'}">${e.neto>0?fmt(e.neto):'✓ Pagado'}</td>
+          <td style="font-weight:700;color:${e.neto>0?'var(--amber)':e.neto===0?'var(--green)':'var(--red)'}">
+            ${e.neto>0 ? fmt(e.neto) : e.neto===0 ? '✓ Pagado' : '− '+fmt(Math.abs(e.neto))}
+          </td>
         </tr>`).join('')}
         <tr style="background:var(--dark3);border-top:1px solid var(--border2);">
           <td colspan="5" style="font-weight:600;color:var(--muted)">Total pendiente</td>
           <td style="font-weight:700;color:${deudaSemana>0?'var(--amber)':'var(--green)'};font-size:15px">${deudaSemana>0?fmt(deudaSemana):'✓ Todo pagado'}</td>
+          <!-- nota: empleados con saldo negativo (a favor del negocio) no reducen este total -->
         </tr>
       </tbody>
     </table></div>
@@ -563,8 +569,9 @@ function renderDashboard() {
       </tr>`).join('')
     : '<tr><td colspan="6" class="empty">Sin movimientos</td></tr>';
 
-  // Actualizar resumen por día
+  // Actualizar resumen por día y flujo diario
   renderResumenDias();
+  renderFlujoDiario();
 }
 
 window.verDetalleDia = function(fecha) {
@@ -1010,6 +1017,95 @@ window.setRangoResumen = function(rango) {
   event.target.classList.add('on');
   renderResumenDias();
 };
+
+window.setRangoFlujo = function(rango) {
+  const h = hoy();
+  if(rango==='semana') { document.getElementById('flujo-f1').value=semIni(); document.getElementById('flujo-f2').value=h; }
+  if(rango==='mes')    { document.getElementById('flujo-f1').value=h.slice(0,7)+'-01'; document.getElementById('flujo-f2').value=h; }
+  if(rango==='todo')   {
+    const fechas = cache.caja.map(c=>c.fecha).concat(cache.lavados.map(l=>l.fecha)).filter(Boolean);
+    if(fechas.length) { document.getElementById('flujo-f1').value=fechas.reduce((a,b)=>a<b?a:b); document.getElementById('flujo-f2').value=h; }
+  }
+  // highlight active button (solo los del bloque flujo)
+  const btns = document.querySelectorAll('#flujo-f1')
+    ?.[0]?.closest('.card')?.querySelectorAll('.qd') || [];
+  btns.forEach(b=>b.classList.remove('on'));
+  event.target.classList.add('on');
+  renderFlujoDiario();
+};
+
+function renderFlujoDiario() {
+  const f1 = document.getElementById('flujo-f1')?.value;
+  const f2 = document.getElementById('flujo-f2')?.value;
+  if(!f1||!f2) return;
+
+  const cajaAll = cache.caja;
+  const saldoBase = cajaAll.filter(c=>c.cat==='Saldo inicial').reduce((s,c)=>s+c.monto,0);
+  const cajaOp   = cajaAll.filter(c=>c.cat!=='Saldo inicial');
+
+  // Todos los días del rango
+  const dias=[], d=new Date(f1+'T12:00'), end=new Date(f2+'T12:00');
+  while(d<=end){ dias.push(d.toISOString().split('T')[0]); d.setDate(d.getDate()+1); }
+
+  // Solo días con actividad
+  const diasActivos = dias.filter(fecha=>
+    cajaOp.some(c=>c.fecha===fecha) || cache.lavados.some(l=>l.fecha===fecha)
+  );
+
+  const tbody = document.getElementById('tbody-flujo');
+  if(!diasActivos.length){
+    tbody.innerHTML='<tr><td colspan="5" class="empty">Sin actividad en este período</td></tr>';
+    return;
+  }
+
+  // Precalcular saldo acumulado hasta cada fecha (eficiente: una sola pasada)
+  // Ordenar todos los movimientos de caja por fecha
+  const allMov = cajaOp.slice().sort((a,b)=>(a.fecha||'').localeCompare(b.fecha||''));
+
+  // Función: saldo acumulado ANTES de la fecha dada
+  function saldoAntesDe(fecha) {
+    return saldoBase + allMov
+      .filter(c=>c.fecha<fecha)
+      .reduce((s,c)=>s+(c.tipo==='ingreso'?c.monto:-c.monto),0);
+  }
+
+  let tIngresos=0, tEgresos=0;
+  const filas = diasActivos.map(fecha=>{
+    const cajaDia = cajaOp.filter(c=>c.fecha===fecha);
+    // Ingresos mostrados: solo lav + bebidas
+    const ingrDia  = cajaDia.filter(c=>c.tipo==='ingreso'&&(c.cat==='Lavado'||c.cat==='Bebidas')).reduce((s,c)=>s+c.monto,0);
+    // Egresos: todos los egresos reales (no hay jornales virtuales en caja)
+    const egrDia   = cajaDia.filter(c=>c.tipo==='egreso').reduce((s,c)=>s+c.monto,0);
+    // Para saldo fin usamos TODOS los ingresos del día (puede haber "Otro ingreso" etc.)
+    const ingrDiaAll = cajaDia.filter(c=>c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
+    const saldoIni = saldoAntesDe(fecha);
+    const saldoFin = saldoIni + ingrDiaAll - egrDia;
+    tIngresos+=ingrDia; tEgresos+=egrDia;
+    return `<tr onclick="verDetalleDia('${fecha}')" style="cursor:pointer;" title="Ver detalle">
+      <td><span style="color:var(--cyan);font-weight:500">${fmtDL(fecha)}</span></td>
+      <td style="color:var(--muted)">${fmt(saldoIni)}</td>
+      <td style="color:var(--green)">${ingrDia>0?fmt(ingrDia):'—'}</td>
+      <td style="color:var(--red)">${egrDia>0?fmt(egrDia):'—'}</td>
+      <td style="font-weight:700;color:${saldoFin>=0?'var(--green)':'var(--red)'}">${fmt(saldoFin)}</td>
+    </tr>`;
+  });
+
+  // Fila de totales
+  const saldoFinal = saldoAntesDe(diasActivos[diasActivos.length-1]);
+  const cajaDiaFinal = cajaOp.filter(c=>c.fecha===diasActivos[diasActivos.length-1]);
+  const ingrFinalAll = cajaDiaFinal.filter(c=>c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
+  const egrFinal     = cajaDiaFinal.filter(c=>c.tipo==='egreso').reduce((s,c)=>s+c.monto,0);
+  const saldoFinTotal = saldoFinal + ingrFinalAll - egrFinal;
+
+  tbody.innerHTML = filas.join('') + `
+    <tr class="total-row">
+      <td style="color:var(--muted)">Total período</td>
+      <td style="color:var(--muted)">—</td>
+      <td style="color:var(--green)">${fmt(tIngresos)}</td>
+      <td style="color:var(--red)">${fmt(tEgresos)}</td>
+      <td style="font-weight:700;color:${saldoFinTotal>=0?'var(--green)':'var(--red)'}">${fmt(saldoFinTotal)}</td>
+    </tr>`;
+}
 
 // ─── EMPLEADOS ─────────────────────────────────────────────────
 function fillAdlEmp() {

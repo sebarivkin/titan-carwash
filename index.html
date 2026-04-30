@@ -76,8 +76,8 @@
       <div id="saldo-banner-val" style="font-size:36px;font-weight:700;color:#fff;line-height:1;">$0</div>
     </div>
     <div style="display:flex;gap:20px;flex-wrap:wrap;">
-      <div style="text-align:right"><div style="font-size:10px;color:rgba(255,255,255,.6);margin-bottom:2px;">Ingresos hoy</div><div id="saldo-ingr-hoy" style="font-size:16px;font-weight:600;color:#fff;">$0</div></div>
-      <div style="text-align:right"><div style="font-size:10px;color:rgba(255,255,255,.6);margin-bottom:2px;">Egresos hoy</div><div id="saldo-egr-hoy" style="font-size:16px;font-weight:600;color:rgba(255,200,200,.9);">$0</div></div>
+      <div style="text-align:right"><div style="font-size:10px;color:rgba(255,255,255,.6);margin-bottom:2px;">Lav. + Bebidas hoy</div><div id="saldo-ingr-hoy" style="font-size:16px;font-weight:600;color:#fff;">$0</div></div>
+      <div style="text-align:right"><div style="font-size:10px;color:rgba(255,255,255,.6);margin-bottom:2px;">Jornales hoy</div><div id="saldo-egr-hoy" style="font-size:16px;font-weight:600;color:rgba(255,200,200,.9);">$0</div></div>
       <div style="text-align:right"><div style="font-size:10px;color:rgba(255,255,255,.6);margin-bottom:2px;">Utilidad hoy</div><div id="saldo-util-hoy" style="font-size:16px;font-weight:600;color:#fff;">$0</div></div>
     </div>
   </div>
@@ -88,7 +88,34 @@
   <!-- 1. Stats grid -->
   <div class="sg" id="dash-stats"></div>
 
-  <!-- 2. Resumen por día -->
+  <!-- 2. Flujo de caja diario -->
+  <div class="card" style="margin-bottom:1.25rem;">
+    <div class="card-hdr">
+      <span class="card-title">Flujo de caja diario</span>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <div class="qdate">
+          <button class="qd" onclick="setRangoFlujo('semana')">Semana</button>
+          <button class="qd on" onclick="setRangoFlujo('mes')">Mes</button>
+          <button class="qd" onclick="setRangoFlujo('todo')">Todo</button>
+        </div>
+        <input type="date" id="flujo-f1" oninput="renderFlujoDiario()" style="font-size:12px;padding:5px 8px;width:130px;">
+        <span style="color:var(--muted);font-size:12px;">→</span>
+        <input type="date" id="flujo-f2" oninput="renderFlujoDiario()" style="font-size:12px;padding:5px 8px;width:130px;">
+      </div>
+    </div>
+    <div class="tw"><table>
+      <thead><tr>
+        <th>Fecha</th>
+        <th>Saldo inicio</th>
+        <th>Ingresos <span style="font-weight:400;opacity:.7">(lav+beb)</span></th>
+        <th>Egresos <span style="font-weight:400;opacity:.7">(sin jornales)</span></th>
+        <th>Saldo fin</th>
+      </tr></thead>
+      <tbody id="tbody-flujo"></tbody>
+    </table></div>
+  </div>
+
+  <!-- 3. Resumen por día -->
   <div class="card" style="margin-bottom:1.25rem;">
     <div class="card-hdr">
       <span class="card-title">Resumen por día</span>
