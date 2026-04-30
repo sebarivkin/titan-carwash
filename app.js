@@ -350,8 +350,8 @@ function initFields() {
   // Resumen por día: semana en curso por defecto
   document.getElementById('resumen-f1').value  = si;
   document.getElementById('resumen-f2').value  = h;
-  // Flujo de caja diario: mes en curso por defecto
-  document.getElementById('flujo-f1').value    = `${h.slice(0,7)}-01`;
+  // Flujo de caja diario: semana en curso por defecto
+  document.getElementById('flujo-f1').value    = si;
   document.getElementById('flujo-f2').value    = h;
   // Restaurar última patente usada
   const lastPlate = localStorage.getItem('titan_last_plate');
