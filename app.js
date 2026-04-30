@@ -575,19 +575,23 @@ function renderDashboard() {
 }
 
 window.verDetalleDia = function(fecha) {
-  const lavsDia = cache.lavados.filter(l=>l.fecha===fecha).sort((a,b)=>(a.hora||'').localeCompare(b.hora||''));
-  const cajaOp  = cache.caja.filter(c=>c.cat!=='Saldo inicial'&&c.fecha===fecha);
-  const ingrLav = cajaOp.filter(c=>c.cat==='Lavado').reduce((s,c)=>s+c.monto,0);
-  const ingrBeb = cajaOp.filter(c=>c.cat==='Bebidas').reduce((s,c)=>s+c.monto,0);
-  const egrCaja = cajaOp.filter(c=>c.tipo==='egreso').reduce((s,c)=>s+c.monto,0);
-  // Jornal devengado ese día
+  const lavsDia  = cache.lavados.filter(l=>l.fecha===fecha).sort((a,b)=>(a.hora||'').localeCompare(b.hora||''));
+  const cajaOp   = cache.caja.filter(c=>c.cat!=='Saldo inicial'&&c.fecha===fecha);
+  const ingrLav  = cajaOp.filter(c=>c.cat==='Lavado').reduce((s,c)=>s+c.monto,0);
+  const ingrBeb  = cajaOp.filter(c=>c.cat==='Bebidas').reduce((s,c)=>s+c.monto,0);
+  const egresos  = cajaOp.filter(c=>c.tipo==='egreso');
+  const egrCaja  = egresos.reduce((s,c)=>s+c.monto,0);
+  // Jornal devengado ese día (virtual — no está en caja a menos que se haya cerrado semana)
   const jDia = cache.empleados.reduce((s,e)=>
     s + ((cache.asistencia[fecha]||[]).includes(e.id) ? e.jornal : 0), 0);
-  const egr = egrCaja + jDia;
+  const totalIngr = ingrLav + ingrBeb;
+  const totalEgr  = egrCaja + jDia;
 
   document.getElementById('dash-dia-titulo').textContent = `Detalle del ${fmtDL(fecha)}`;
   document.getElementById('dash-dia-card').style.display = '';
   document.getElementById('dash-dia-card').scrollIntoView({behavior:'smooth', block:'start'});
+
+  // Tabla ingresos
   document.getElementById('dash-dia-tbody').innerHTML = lavsDia.length
     ? lavsDia.map(l=>`<tr>
         <td>${l.hora||'—'}</td>
@@ -597,16 +601,49 @@ window.verDetalleDia = function(fecha) {
         <td>${l.pago}</td>
         <td style="color:var(--green);font-weight:700">${fmt(l.precio)}</td>
       </tr>`).join('')
-    : '<tr><td colspan="6" class="empty">Sin servicios este día</td></tr>';
+      + `<tr class="total-row">
+          <td colspan="5" style="color:var(--muted)">Total ingresos</td>
+          <td style="color:var(--green)">${fmt(totalIngr)}</td>
+        </tr>`
+    : '<tr><td colspan="6" class="empty">Sin ingresos este día</td></tr>';
 
+  // Tabla egresos: movimientos reales de caja + jornales devengados
+  const filasEgr = egresos.map(e=>`<tr>
+    <td><span class="badge br_">${e.cat}</span></td>
+    <td style="color:var(--muted)">${e.desc||'—'}</td>
+    <td>${e.pago||'—'}</td>
+    <td style="color:var(--red);font-weight:700">${fmt(e.monto)}</td>
+  </tr>`);
+
+  // Jornales devengados (virtual — mostrar solo si hubo asistencia y no están ya en caja como Sueldos)
+  const empConAsistencia = cache.empleados.filter(e=>(cache.asistencia[fecha]||[]).includes(e.id));
+  if(empConAsistencia.length) {
+    const detJornales = empConAsistencia.map(e=>e.nombre+' '+fmt(e.jornal)).join(', ');
+    filasEgr.push(`<tr style="opacity:.7;">
+      <td><span class="badge bw">Jornal devengado</span></td>
+      <td style="color:var(--muted);font-style:italic">${detJornales}</td>
+      <td>—</td>
+      <td style="color:var(--red);font-weight:700">${fmt(jDia)}</td>
+    </tr>`);
+  }
+
+  filasEgr.push(`<tr class="total-row">
+    <td colspan="3" style="color:var(--muted)">Total egresos</td>
+    <td style="color:var(--red)">${fmt(totalEgr)}</td>
+  </tr>`);
+
+  document.getElementById('dash-dia-tbody-egr').innerHTML = filasEgr.length > 1
+    ? filasEgr.join('')
+    : '<tr><td colspan="4" class="empty">Sin egresos este día</td></tr>';
+
+  // Resumen final
+  const resultado = totalIngr - totalEgr;
   document.getElementById('dash-dia-resumen').innerHTML = `
     <div style="font-size:12px;color:var(--muted)">Lavados: <strong style="color:var(--cyan)">${lavsDia.filter(l=>l.cat!=='Bebida').length}</strong></div>
     <div style="font-size:12px;color:var(--muted)">Bebidas: <strong style="color:var(--cyan)">${lavsDia.filter(l=>l.cat==='Bebida').length}</strong></div>
-    <div style="font-size:12px;color:var(--muted)">Ingr. lavados: <strong style="color:var(--green)">${fmt(ingrLav)}</strong></div>
-    <div style="font-size:12px;color:var(--muted)">Ingr. bebidas: <strong style="color:var(--green)">${fmt(ingrBeb)}</strong></div>
-    <div style="font-size:12px;color:var(--muted)">Jornal empleados: <strong style="color:var(--red)">${fmt(jDia)}</strong></div>
-    <div style="font-size:12px;color:var(--muted)">Otros egresos: <strong style="color:var(--red)">${fmt(egrCaja)}</strong></div>
-    <div style="font-size:12px;color:var(--muted)">Utilidad: <strong style="color:${ingrLav+ingrBeb-egr>=0?'var(--green)':'var(--red)'}">${fmt(ingrLav+ingrBeb-egr)}</strong></div>
+    <div style="font-size:12px;color:var(--muted)">Total ingresos: <strong style="color:var(--green)">${fmt(totalIngr)}</strong></div>
+    <div style="font-size:12px;color:var(--muted)">Total egresos: <strong style="color:var(--red)">${fmt(totalEgr)}</strong></div>
+    <div style="font-size:13px;font-weight:700;color:${resultado>=0?'var(--green)':'var(--red)'}">Resultado: ${fmt(resultado)}</div>
   `;
 };
 

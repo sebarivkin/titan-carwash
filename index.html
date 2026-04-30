@@ -148,9 +148,17 @@
       <span class="card-title" id="dash-dia-titulo">Detalle del día</span>
       <button class="btn bs" style="font-size:11px;padding:4px 10px;" onclick="cerrarDetalleDia()">✕ Cerrar</button>
     </div>
+    <!-- Ingresos -->
+    <div style="font-size:10px;font-weight:600;color:var(--green);letter-spacing:.4px;padding:.6rem 1.25rem .2rem;text-transform:uppercase;">Ingresos</div>
     <div class="tw"><table>
       <thead><tr><th>Hora</th><th>Servicio</th><th>Categoría</th><th>Patente</th><th>Pago</th><th>Monto</th></tr></thead>
       <tbody id="dash-dia-tbody"></tbody>
+    </table></div>
+    <!-- Egresos -->
+    <div style="font-size:10px;font-weight:600;color:var(--red);letter-spacing:.4px;padding:.6rem 1.25rem .2rem;border-top:1px solid var(--border);text-transform:uppercase;">Egresos</div>
+    <div class="tw"><table>
+      <thead><tr><th>Categoría</th><th>Descripción</th><th>Pago</th><th>Monto</th></tr></thead>
+      <tbody id="dash-dia-tbody-egr"></tbody>
     </table></div>
     <div id="dash-dia-resumen" style="display:flex;gap:12px;padding:10px 14px;background:var(--dark3);border-top:1px solid var(--border);flex-wrap:wrap;"></div>
   </div>
