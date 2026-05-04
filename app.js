@@ -1027,7 +1027,7 @@ window.exportarCaja = function() {
   movs.sort((a,b)=>b.fecha?.localeCompare(a.fecha||'')||0);
   exportCSV(
     ['Fecha','Tipo','Categoría','Descripción','Monto','Usuario'],
-    movs.map(m=>[m.fecha,m.tipo,m.cat,m.desc||'',m.monto,m.user||'']),
+    movs.map(m=>[fmtDL(m.fecha),m.tipo,m.cat,m.desc||'',m.monto,m.user||'']),
     `caja-${f1||'todo'}-${f2||'todo'}.csv`
   );
 };
