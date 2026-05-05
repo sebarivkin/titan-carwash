@@ -498,7 +498,6 @@ function renderDashboard() {
   });
 
   document.getElementById('dash-stats').innerHTML = `
-    <div class="stat"><div class="slbl">Lavados hoy</div><div class="sval c">${lavH}</div></div>
     <div class="stat" style="border-color:var(--cyan)"><div class="slbl">Lavados totales</div><div class="sval c">${soloLavados.length}</div><div style="font-size:10px;color:var(--muted2);margin-top:3px">desde el 16/03</div></div>
     <div class="stat"><div class="slbl">Lavados semana</div><div class="sval c">${lavS}</div></div>
     <div class="stat"><div class="slbl">Ingr. semana</div><div class="sval g">${fmt(ingrS)}</div></div>
