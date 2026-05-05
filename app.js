@@ -428,8 +428,17 @@ function renderDashboard() {
   const totalEgr   = cajaOp.filter(c=>c.tipo==='egreso').reduce((s,c)=>s+c.monto,0);
   const saldoTotal = saldoBase + totalIngr - totalEgr;
 
+  // Desglose efectivo / transferencia
+  // Los egresos (sueldos, adelantos, gastos) siempre salen de efectivo
+  const ingrEfect  = cajaOp.filter(c=>c.tipo==='ingreso'&&c.pago==='Efectivo').reduce((s,c)=>s+c.monto,0);
+  const ingrTransf = cajaOp.filter(c=>c.tipo==='ingreso'&&c.pago!=='Efectivo'&&c.pago).reduce((s,c)=>s+c.monto,0);
+  const saldoEfect = saldoBase + ingrEfect - totalEgr;
+  const saldoTransf = ingrTransf;
+
   // Banner — utilidad operativa (sin gastos extraordinarios)
   document.getElementById('saldo-banner-val').textContent = fmt(saldoTotal);
+  document.getElementById('saldo-efect').textContent      = fmt(saldoEfect);
+  document.getElementById('saldo-transf').textContent     = fmt(saldoTransf);
   document.getElementById('saldo-ingr-hoy').textContent   = fmt(ingrH);
   document.getElementById('saldo-egr-hoy').textContent    = fmt(egrHOper);
   document.getElementById('saldo-util-hoy').textContent   = fmt(utilHOper);
@@ -465,17 +474,16 @@ function renderDashboard() {
   const ticketProm      = lavadosConPrecio.length > 0 ? Math.round(ingrSoloLav / lavadosConPrecio.length) : 0;
 
   // Empleados: rango seleccionable — descontar lo ya pagado en ese rango
-  // Rango empleados: si el valor guardado es de una semana pasada, resetear a la semana actual
   const savedF1 = document.getElementById('dash-emp-f1')?.value;
   const savedF2 = document.getElementById('dash-emp-f2')?.value;
-  const empF1 = (savedF1 && savedF1 >= si) ? savedF1 : si;
-  const empF2 = (savedF2 && savedF2 >= si) ? savedF2 : semFin();
+  const empF1 = savedF1 || si;
+  const empF2 = savedF2 || semFin();
   const diasEmp = diasEnRango(empF1, empF2);
   let deudaSemana = 0;
   const resEmp = cache.empleados.map(e => {
     const diasTrab  = diasEmp.filter(d=>(cache.asistencia[d]||[]).includes(e.id)).length;
     const bruto     = diasTrab * e.jornal;
-    const adlPend   = cache.adelantos.filter(a=>a.empId===e.id&&!a.pagado&&a.fecha>=empF1&&a.fecha<=empF2).reduce((s,a)=>s+a.monto,0);
+    const adlPend   = cache.adelantos.filter(a=>a.empId===e.id&&!a.pagado).reduce((s,a)=>s+a.monto,0);
     // Descontar lo ya pagado por cierre de semana en este rango
     const yaPagado  = (cache.semanasPagadas||[])
       .filter(sp=>sp.f1>=empF1&&sp.f2<=empF2)
@@ -1163,7 +1171,7 @@ function renderEmpleados() {
   const hoyS  = hoy();
 
   document.getElementById('emp-grid').innerHTML = cache.empleados.map(e => {
-    const adlSem   = cache.adelantos.filter(a=>a.empId===e.id&&!a.pagado&&a.fecha>=f1&&a.fecha<=f2);
+    const adlSem   = cache.adelantos.filter(a=>a.empId===e.id&&!a.pagado);
     const totalAdl = adlSem.reduce((s,a)=>s+a.monto,0);
     const diasTrab = dias.filter(d=>(cache.asistencia[d]||[]).includes(e.id));
     const bruto    = diasTrab.length * e.jornal;
