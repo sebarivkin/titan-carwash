@@ -397,7 +397,7 @@ function renderDashboard() {
 
   // Categorías operativas (día a día) vs extraordinarias (gastos del período)
   // Sueldos y adelantos NO cuentan como egreso operativo del día — son cierre semanal
-  const CATS_NO_DIARIO = ['Sueldos','Adelanto empleado'];
+  const CATS_NO_DIARIO = ['Sueldos','Adelanto empleado','Extracción dueños'];
   const esOper = m => !CATS_NO_DIARIO.includes(m.cat);
 
   // Ingresos hoy: solo lavados + bebidas (cash real del servicio)
@@ -423,10 +423,11 @@ function renderDashboard() {
   const egrMOper  = cajaOp.filter(c=>c.fecha>=mi&&c.tipo==='egreso'&&esOper(c)).reduce((s,c)=>s+c.monto,0);
 
   // Saldo real en caja — todos los egresos (el saldo sí se ve afectado por todo)
-  const saldoBase  = cache.caja.filter(c=>c.cat==='Saldo inicial').reduce((s,c)=>s+c.monto,0);
-  const totalIngr  = cajaOp.filter(c=>c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
-  const totalEgr   = cajaOp.filter(c=>c.tipo==='egreso').reduce((s,c)=>s+c.monto,0);
-  const saldoTotal = saldoBase + totalIngr - totalEgr;
+  const saldoBase       = cache.caja.filter(c=>c.cat==='Saldo inicial').reduce((s,c)=>s+c.monto,0);
+  const totalIngr       = cajaOp.filter(c=>c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
+  const totalEgr        = cajaOp.filter(c=>c.tipo==='egreso').reduce((s,c)=>s+c.monto,0);
+  const saldoTotal      = saldoBase + totalIngr - totalEgr;
+  const totalExtracciones = cajaOp.filter(c=>c.cat==='Extracción dueños').reduce((s,c)=>s+c.monto,0);
 
   // Desglose efectivo / transferencia
   // Los egresos (sueldos, adelantos, gastos) siempre salen de efectivo
@@ -511,6 +512,7 @@ function renderDashboard() {
     <div class="stat"><div class="slbl">Ticket prom. lavado</div><div class="sval a">${fmt(ticketProm)}</div></div>
     ${topSrv?`<div class="stat"><div class="slbl">Lavado top</div><div class="sval c" style="font-size:13px;">${topSrv[0]}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">${topSrv[1]} veces</div></div>`:''}
     <div class="stat" style="border-color:var(--amber)"><div class="slbl">A pagar empleados</div><div class="sval a">${fmt(deudaSemana)}</div><div style="font-size:10px;color:var(--muted2);margin-top:2px">rango seleccionado</div></div>
+    <div class="stat" style="border-color:#a78bfa"><div class="slbl">💰 Extracciones dueños</div><div class="sval" style="color:#a78bfa">${fmt(totalExtracciones)}</div><div style="font-size:10px;color:var(--muted2);margin-top:2px">acumulado total</div></div>
   `;
 
   // Card empleados — ya existe en el HTML, solo actualizar contenido
@@ -973,9 +975,10 @@ function renderCaja() {
   if(cat) movs = movs.filter(m=>m.cat===cat);
   movs.sort((a,b)=>b.fecha?.localeCompare(a.fecha||'')||0);
 
-  const ingr  = movs.filter(m=>m.tipo==='ingreso'&&m.cat!=='Saldo inicial').reduce((s,m)=>s+m.monto,0);
-  const egr   = movs.filter(m=>m.tipo==='egreso').reduce((s,m)=>s+m.monto,0);
-  const efect = movs.filter(m=>m.tipo==='ingreso'&&m.pago==='Efectivo'&&m.cat!=='Saldo inicial').reduce((s,m)=>s+m.monto,0);
+  const ingr      = movs.filter(m=>m.tipo==='ingreso'&&m.cat!=='Saldo inicial').reduce((s,m)=>s+m.monto,0);
+  const egr       = movs.filter(m=>m.tipo==='egreso'&&m.cat!=='Extracción dueños').reduce((s,m)=>s+m.monto,0);
+  const extracc   = movs.filter(m=>m.cat==='Extracción dueños').reduce((s,m)=>s+m.monto,0);
+  const efect     = movs.filter(m=>m.tipo==='ingreso'&&m.pago==='Efectivo'&&m.cat!=='Saldo inicial').reduce((s,m)=>s+m.monto,0);
   // Saldo total global siempre (independiente del filtro)
   const saldoBase = cache.caja.filter(c=>c.cat==='Saldo inicial').reduce((s,c)=>s+c.monto,0);
   const cajaOp2   = cache.caja.filter(c=>c.cat!=='Saldo inicial');
@@ -985,9 +988,10 @@ function renderCaja() {
 
   document.getElementById('caja-stats').innerHTML = `
     <div class="stat"><div class="slbl">Ingresos (filtro)</div><div class="sval g">${fmt(ingr)}</div></div>
-    <div class="stat"><div class="slbl">Egresos (filtro)</div><div class="sval r">${fmt(egr)}</div></div>
+    <div class="stat"><div class="slbl">Egresos operativos</div><div class="sval r">${fmt(egr)}</div></div>
     <div class="stat"><div class="slbl">Resultado filtro</div><div class="sval ${ingr-egr>=0?'g':'r'}">${fmt(ingr-egr)}</div></div>
     <div class="stat"><div class="slbl">Efectivo ingr.</div><div class="sval a">${fmt(efect)}</div></div>
+    <div class="stat" style="border-color:#a78bfa"><div class="slbl">💰 Extracciones dueños</div><div class="sval" style="color:#a78bfa">${fmt(extracc)}</div></div>
     <div class="stat" style="border-color:var(--cyan)"><div class="slbl">Saldo total en caja</div><div class="sval ${saldoTotal>=0?'g':'r'}">${fmt(saldoTotal)}</div></div>
   `;
   document.getElementById('tbody-caja').innerHTML = movs.length
