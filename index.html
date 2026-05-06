@@ -268,11 +268,13 @@
       <span style="font-size:11px;color:var(--muted)">Lavados, bebidas, adelantos y sueldos se registran automáticamente</span></div>
     <div class="card-body">
       <div class="g4">
-        <div class="fg"><label class="lbl">Tipo</label><select id="cx-tipo"><option value="ingreso">Ingreso</option><option value="egreso">Egreso</option></select></div>
+        <div class="fg"><label class="lbl">Tipo</label><select id="cx-tipo" onchange="onCxTipoChange()"><option value="ingreso">Ingreso</option><option value="egreso">Egreso</option></select></div>
         <div class="fg"><label class="lbl">Categoría</label>
           <select id="cx-cat"><option>Otro ingreso</option><option>Insumos</option><option>Servicios</option><option>Impuestos</option><option>Otro egreso</option><option>Extracción dueños</option></select></div>
         <div class="fg"><label class="lbl">Monto ($)</label><input type="number" id="cx-monto" placeholder="0" min="0"></div>
         <div class="fg"><label class="lbl">Fecha</label><input type="date" id="cx-fecha"></div>
+        <div class="fg" id="cx-cf-wrap" style="display:none"><label class="lbl">Vincular a costo fijo</label>
+          <select id="cx-cf"><option value="">— Ninguno —</option></select></div>
         <div class="fg full"><label class="lbl">Descripción</label><input type="text" id="cx-desc" placeholder="Detalle"></div>
       </div>
       <div class="form-row"><button class="btn bp" onclick="agregarMovExtraord()">Guardar</button></div>
@@ -373,7 +375,7 @@
   <div class="card">
     <div class="card-hdr"><span class="card-title">Planilla de costos fijos</span></div>
     <div class="tw"><table>
-      <thead><tr><th>Nombre</th><th>Categoría</th><th>Monto/mes</th><th></th></tr></thead>
+      <thead><tr><th>Nombre</th><th>Categoría</th><th>Monto/mes</th><th>Pagos reales</th><th></th></tr></thead>
       <tbody id="tbody-costos"></tbody>
     </table></div>
   </div>

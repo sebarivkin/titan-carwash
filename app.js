@@ -397,23 +397,40 @@ function jornalDevengado(fechaDesde, fechaHasta) {
 
 // ─── COSTOS FIJOS ──────────────────────────────────────────────
 function renderCostosFijos() {
-  const costos   = cache.costosFijos || [];
-  const totalCF  = costos.reduce((s,c)=>s+c.monto,0);
+  const costos  = cache.costosFijos || [];
+  const mi      = hoy().slice(0,7) + '-01'; // primer día del mes actual
 
-  // Ticket promedio de lavado (mismo cálculo que renderDashboard)
+  // Para cada costo fijo, buscar pagos reales vinculados en Caja
+  // y calcular monto efectivo (promedio mensual real si hay datos, sino el configurado)
+  const costosConReal = costos.map(c => {
+    const pagos = cache.caja.filter(m=>m.costoFijoId===c.id&&m.tipo==='egreso');
+    // Promedio mensual real: agrupar por mes y promediar
+    const porMes = {};
+    pagos.forEach(p=>{ const m=p.fecha.slice(0,7); porMes[m]=(porMes[m]||0)+p.monto; });
+    const meses    = Object.values(porMes);
+    const promReal = meses.length > 0 ? Math.round(meses.reduce((s,v)=>s+v,0)/meses.length) : null;
+    const esteMes  = pagos.filter(p=>p.fecha>=mi).reduce((s,p)=>s+p.monto,0);
+    const ultPago  = pagos.sort((a,b)=>b.fecha.localeCompare(a.fecha))[0];
+    return {...c, pagos, promReal, esteMes, ultPago};
+  });
+
+  // Total usando promedio real cuando disponible, monto configurado si no
+  const totalCF = costosConReal.reduce((s,c)=>s+(c.promReal ?? c.monto),0);
+
+  // Ticket promedio de lavado
   const lavadosConPrecio = cache.lavados.filter(l=>l.cat!=='Bebida'&&l.precio>0);
   const ingrSoloLav = cache.caja.filter(c=>c.cat==='Lavado'&&c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
-  const ticketProm  = lavadosConPrecio.length > 0 ? Math.round(ingrSoloLav / lavadosConPrecio.length) : 0;
+  const ticketProm  = lavadosConPrecio.length > 0 ? Math.round(ingrSoloLav/lavadosConPrecio.length) : 0;
 
-  // Sueldos mensuales estimados: suma de jornales × 26 días laborables (lun-sáb)
+  // Sueldos mensuales estimados: suma de jornales × 26 días laborables
   const sueldosMes = cache.empleados.reduce((s,e)=>s+e.jornal,0) * 26;
   const costoTotal = totalCF + sueldosMes;
 
   // Punto de equilibrio
   const DIAS_MES = 26;
-  const beCF     = ticketProm > 0 ? Math.ceil(totalCF  / ticketProm) : 0;
+  const beCF     = ticketProm > 0 ? Math.ceil(totalCF   / ticketProm) : 0;
   const beTotal  = ticketProm > 0 ? Math.ceil(costoTotal / ticketProm) : 0;
-  const beCFDia  = ticketProm > 0 ? Math.ceil(totalCF  / DIAS_MES / ticketProm) : 0;
+  const beCFDia  = ticketProm > 0 ? Math.ceil(totalCF   / DIAS_MES / ticketProm) : 0;
   const beTotDia = ticketProm > 0 ? Math.ceil(costoTotal / DIAS_MES / ticketProm) : 0;
 
   // Panel análisis
@@ -423,6 +440,7 @@ function renderCostosFijos() {
       <div class="stat" style="border-color:var(--red)">
         <div class="slbl">Costos fijos/mes</div>
         <div class="sval r">${fmt(totalCF)}</div>
+        <div style="font-size:10px;color:var(--muted2);margin-top:2px">promedio real donde hay datos</div>
       </div>
       <div class="stat" style="border-color:var(--amber)">
         <div class="slbl">Sueldos estimados/mes</div>
@@ -450,38 +468,49 @@ function renderCostosFijos() {
       </div>
     </div>
   ` : `<div style="background:var(--dark2);border:1px solid var(--border);border-radius:10px;padding:14px 18px;margin-bottom:1.25rem;font-size:13px;color:var(--muted);text-align:center;">
-    ${totalCF === 0 ? 'Agregá costos fijos para ver el análisis de punto de equilibrio.' : 'Aún no hay lavados registrados con precio para calcular el ticket promedio.'}
+    ${costos.length === 0 ? 'Agregá costos fijos para ver el análisis de punto de equilibrio.' : 'Aún no hay lavados registrados con precio para calcular el ticket promedio.'}
   </div>`;
 
-  // Tabla de costos agrupada por categoría
-  const cats = [...new Set(costos.map(c=>c.categoria))].sort();
+  // Tabla con datos reales
+  const cats = [...new Set(costosConReal.map(c=>c.categoria))].sort();
   const filas = cats.flatMap(cat => {
-    const del_cat = costos.filter(c=>c.categoria===cat);
-    const subTotal = del_cat.reduce((s,c)=>s+c.monto,0);
+    const delCat   = costosConReal.filter(c=>c.categoria===cat);
+    const subTotal = delCat.reduce((s,c)=>s+(c.promReal??c.monto),0);
     return [
-      ...del_cat.map(c=>`<tr>
-        <td style="font-weight:500;padding-left:14px">${c.nombre}</td>
-        <td style="color:var(--muted)">${c.categoria}</td>
-        <td style="font-weight:700;color:var(--red)">${fmt(c.monto)}</td>
-        <td><button class="btn br" onclick="eliminarCostoFijo('${c.id}')">✕</button></td>
-      </tr>`),
+      ...delCat.map(c=>{
+        const montoMostrar = c.promReal ?? c.monto;
+        const tieneReal    = c.promReal !== null;
+        const ultFecha     = c.ultPago ? fmtDL(c.ultPago.fecha) : '—';
+        return `<tr>
+          <td style="font-weight:500">${c.nombre}</td>
+          <td style="color:var(--muted)">${c.categoria}</td>
+          <td style="font-weight:700;color:var(--red)">${fmt(montoMostrar)}
+            ${tieneReal
+              ? `<div style="font-size:10px;color:var(--green);margin-top:1px">✓ real · conf: ${fmt(c.monto)}</div>`
+              : `<div style="font-size:10px;color:var(--muted2);margin-top:1px">estimado — sin pagos aún</div>`}
+          </td>
+          <td style="font-size:11px;color:var(--muted2)">
+            ${c.esteMes > 0 ? `Este mes: ${fmt(c.esteMes)}<br>` : ''}
+            ${tieneReal ? `Último: ${ultFecha}` : ''}
+          </td>
+          <td><button class="btn br" onclick="eliminarCostoFijo('${c.id}')">✕</button></td>
+        </tr>`;
+      }),
       `<tr style="background:var(--dark3);">
-        <td colspan="2" style="font-size:11px;color:var(--muted2);padding-left:14px;">Subtotal ${cat}</td>
-        <td style="font-size:11px;color:var(--muted);font-weight:600;">${fmt(subTotal)}</td>
-        <td></td>
+        <td colspan="3" style="font-size:11px;color:var(--muted2);padding-left:14px;">Subtotal ${cat}</td>
+        <td colspan="2" style="font-size:11px;color:var(--muted);font-weight:600;">${fmt(subTotal)}</td>
       </tr>`
     ];
   });
-  if(totalCF > 0) filas.push(`<tr style="background:var(--dark3);border-top:2px solid var(--border2);">
-    <td colspan="2" style="font-weight:700;color:var(--text)">TOTAL MENSUAL</td>
-    <td style="font-weight:800;color:var(--red);font-size:16px">${fmt(totalCF)}</td>
-    <td></td>
+  if(costos.length > 0) filas.push(`<tr style="background:var(--dark3);border-top:2px solid var(--border2);">
+    <td colspan="3" style="font-weight:700;color:var(--text)">TOTAL MENSUAL</td>
+    <td colspan="2" style="font-weight:800;color:var(--red);font-size:16px">${fmt(totalCF)}</td>
   </tr>`);
 
   const tbodyCostos = document.getElementById('tbody-costos');
   if(tbodyCostos) tbodyCostos.innerHTML = filas.length
     ? filas.join('')
-    : '<tr><td colspan="4" class="empty">Sin costos registrados. Agregá el primero arriba.</td></tr>';
+    : '<tr><td colspan="5" class="empty">Sin costos registrados. Agregá el primero arriba.</td></tr>';
 }
 
 window.agregarCostoFijo = async function() {
@@ -1080,22 +1109,38 @@ window.eliminarLavado = async function(id, fecha, precio, servicio, patente) {
 };
 
 // ─── CAJA ──────────────────────────────────────────────────────
+window.onCxTipoChange = function() {
+  const esEgreso = document.getElementById('cx-tipo').value === 'egreso';
+  const wrap = document.getElementById('cx-cf-wrap');
+  if(!wrap) return;
+  wrap.style.display = esEgreso ? '' : 'none';
+  if(esEgreso) {
+    const sel = document.getElementById('cx-cf');
+    sel.innerHTML = '<option value="">— Ninguno —</option>' +
+      (cache.costosFijos||[]).map(c=>`<option value="${c.id}">${c.nombre} (${c.categoria})</option>`).join('');
+  }
+};
+
 window.agregarMovExtraord = async function() {
   const monto = Number(document.getElementById('cx-monto').value);
   if(!monto) { toast('Ingresá un monto','err'); return; }
+  const tipo  = document.getElementById('cx-tipo').value;
+  const cfId  = tipo === 'egreso' ? (document.getElementById('cx-cf')?.value || '') : '';
   const mov = {
     fecha: document.getElementById('cx-fecha').value || hoy(),
-    tipo: document.getElementById('cx-tipo').value,
+    tipo,
     cat:  document.getElementById('cx-cat').value,
     desc: document.getElementById('cx-desc').value.trim(),
-    monto, pago:'—', user: cu.nombre
+    monto, pago:'—', user: cu.nombre,
+    ...(cfId ? {costoFijoId: cfId} : {})
   };
   const id = await fsAdd('caja', mov);
   cache.caja.push({id, ...mov});
   await auditLog('CAJA MANUAL', `${mov.tipo.toUpperCase()} — ${mov.cat} — ${fmt(monto)}`);
-  renderCaja(); renderDashboard(); toast('Guardado','ok');
+  renderCaja(); renderDashboard(); renderCostosFijos(); toast('Guardado','ok');
   document.getElementById('cx-monto').value = '';
   document.getElementById('cx-desc').value  = '';
+  document.getElementById('cx-cf').value    = '';
 };
 
 function renderCaja() {
