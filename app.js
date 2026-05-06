@@ -523,46 +523,55 @@ window.agregarCostoFijo = async function() {
   if(!nombre) { toast('Ingresá un nombre','err'); return; }
   if(!monto)  { toast('Ingresá un monto','err'); return; }
   const btn = document.getElementById('btn-add-costo');
-  await withLoading(btn, async () => {
+  if(btn) btn.disabled = true;
+  try {
     // 1. Guardar el costo fijo
     const costo = {nombre, categoria:cat, monto};
     const cfId  = await fsAdd('costosFijos', costo);
     cache.costosFijos.push({id:cfId, ...costo});
-    // 2. Crear automáticamente el egreso en Caja
-    await registrarPagoCostoFijo(cfId, nombre, cat, monto);
+    // 2. Crear el egreso en Caja
+    const mov = {
+      fecha: hoy(), tipo:'egreso', cat:'Costos fijos',
+      desc: nombre, monto, pago:'—',
+      costoFijoId: cfId, user: cu?.nombre || '—'
+    };
+    const cajId = await fsAdd('caja', mov);
+    cache.caja.push({id:cajId, ...mov});
     await auditLog('COSTO FIJO', `${nombre} — ${fmt(monto)}/mes`);
     renderCostosFijos(); renderCaja(); renderDashboard();
     toast('Costo guardado y descontado de caja ✓','ok');
     document.getElementById('cf-nombre').value = '';
     document.getElementById('cf-monto').value  = '';
-  });
+  } catch(e) {
+    console.error('Error al guardar costo fijo:', e);
+    toast('Error al guardar. Revisá la consola.','err');
+  } finally {
+    if(btn) btn.disabled = false;
+  }
 };
 
-// Crea un egreso en Caja vinculado a un costo fijo
-async function registrarPagoCostoFijo(cfId, nombre, cat, monto, fecha) {
-  const mov = {
-    fecha: fecha || hoy(),
-    tipo: 'egreso',
-    cat: 'Costos fijos',
-    desc: nombre,
-    monto, pago: '—',
-    costoFijoId: cfId,
-    user: cu?.nombre || '—'
-  };
-  const id = await fsAdd('caja', mov);
-  cache.caja.push({id, ...mov});
-}
 
 window.pagarCostoFijo = async function(cfId) {
   const cf = cache.costosFijos.find(c=>c.id===cfId);
   if(!cf) return;
-  const montoStr = prompt(`Monto a pagar para "${cf.nombre}" (Enter para usar $${cf.monto.toLocaleString('es-AR')}):`, cf.monto);
+  const montoStr = prompt(`Monto a pagar para "${cf.nombre}"\n(Presioná Enter para usar ${fmt(cf.monto)}):`, cf.monto);
   if(montoStr === null) return; // canceló
   const monto = Number(montoStr) || cf.monto;
-  await registrarPagoCostoFijo(cfId, cf.nombre, cf.categoria, monto);
-  await auditLog('PAGO COSTO FIJO', `${cf.nombre} — ${fmt(monto)}`);
-  renderCostosFijos(); renderCaja(); renderDashboard();
-  toast(`Pago de ${cf.nombre} registrado ✓`, 'ok');
+  try {
+    const mov = {
+      fecha: hoy(), tipo:'egreso', cat:'Costos fijos',
+      desc: cf.nombre, monto, pago:'—',
+      costoFijoId: cfId, user: cu?.nombre || '—'
+    };
+    const cajId = await fsAdd('caja', mov);
+    cache.caja.push({id:cajId, ...mov});
+    await auditLog('PAGO COSTO FIJO', `${cf.nombre} — ${fmt(monto)}`);
+    renderCostosFijos(); renderCaja(); renderDashboard();
+    toast(`Pago de ${cf.nombre} registrado ✓`, 'ok');
+  } catch(e) {
+    console.error('Error al registrar pago:', e);
+    toast('Error al registrar el pago.','err');
+  }
 };
 
 window.eliminarCostoFijo = async function(id) {
