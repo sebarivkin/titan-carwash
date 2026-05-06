@@ -109,7 +109,7 @@ let regTab = 'lavados';  // active tab in registrar
 let cache = {
   usuarios: [], empleados: [], servicios: [], bebidas: [],
   lavados: [], caja: [], adelantos: [], asistencia: {}, audit: [],
-  stockHist: [], semanasPagadas: []
+  stockHist: [], semanasPagadas: [], costosFijos: []
 };
 
 // ─── FIRESTORE HELPERS ─────────────────────────────────────────
@@ -189,7 +189,7 @@ async function initApp() {
 
 async function loadAllFromFirebase() {
   // Todas las consultas EN PARALELO — mucho más rápido
-  const [usuarios, empleados, servicios, bebidas, lavados, caja, adelantos, asistSnap, stockHist, semanasPagadas] = await Promise.all([
+  const [usuarios, empleados, servicios, bebidas, lavados, caja, adelantos, asistSnap, stockHist, semanasPagadas, costosFijos] = await Promise.all([
     db.collection('usuarios').get(),
     db.collection('empleados').get(),
     db.collection('servicios').get(),
@@ -200,6 +200,7 @@ async function loadAllFromFirebase() {
     db.collection('asistencia').get(),
     db.collection('stockHist').get(),
     db.collection('semanasPagadas').get(),
+    db.collection('costosFijos').get(),
   ]);
 
   cache.usuarios       = usuarios.docs.map(d=>({id:d.id,...d.data()}));
@@ -211,6 +212,7 @@ async function loadAllFromFirebase() {
   cache.adelantos      = adelantos.docs.map(d=>({id:d.id,...d.data()}));
   cache.stockHist      = stockHist.docs.map(d=>({id:d.id,...d.data()}));
   cache.semanasPagadas = semanasPagadas.docs.map(d=>({id:d.id,...d.data()}));
+  cache.costosFijos    = costosFijos.docs.map(d=>({id:d.id,...d.data()}));
   cache.asistencia = {};
   asistSnap.docs.forEach(d => { cache.asistencia[d.id] = d.data().empleados || []; });
 
@@ -371,6 +373,7 @@ window.go = function(id, btn) {
   if(id==='empleados') renderEmpleados();
   if(id==='stock')     renderStock();
   if(id==='auditoria') renderAudit();
+  if(id==='costos')    renderCostosFijos();
   if(id==='config')    { renderUsers(); renderSrvcfg(); renderBebcfg(); renderEmpcfg(); cargarSaldoEnConfig(); }
 };
 
@@ -378,6 +381,7 @@ function renderAll() {
   renderDashboard(); renderQGrid(); renderHistorial();
   renderCaja(); renderEmpleados(); renderAudit();
   renderUsers(); renderSrvcfg(); renderBebcfg(); renderEmpcfg();
+  renderCostosFijos();
 }
 
 // ─── DASHBOARD ─────────────────────────────────────────────────
@@ -390,6 +394,124 @@ function jornalDevengado(fechaDesde, fechaHasta) {
   });
   return total;
 }
+
+// ─── COSTOS FIJOS ──────────────────────────────────────────────
+function renderCostosFijos() {
+  const costos   = cache.costosFijos || [];
+  const totalCF  = costos.reduce((s,c)=>s+c.monto,0);
+
+  // Ticket promedio de lavado (mismo cálculo que renderDashboard)
+  const lavadosConPrecio = cache.lavados.filter(l=>l.cat!=='Bebida'&&l.precio>0);
+  const ingrSoloLav = cache.caja.filter(c=>c.cat==='Lavado'&&c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
+  const ticketProm  = lavadosConPrecio.length > 0 ? Math.round(ingrSoloLav / lavadosConPrecio.length) : 0;
+
+  // Sueldos mensuales estimados: suma de jornales × 26 días laborables (lun-sáb)
+  const sueldosMes = cache.empleados.reduce((s,e)=>s+e.jornal,0) * 26;
+  const costoTotal = totalCF + sueldosMes;
+
+  // Punto de equilibrio
+  const DIAS_MES = 26;
+  const beCF     = ticketProm > 0 ? Math.ceil(totalCF  / ticketProm) : 0;
+  const beTotal  = ticketProm > 0 ? Math.ceil(costoTotal / ticketProm) : 0;
+  const beCFDia  = ticketProm > 0 ? Math.ceil(totalCF  / DIAS_MES / ticketProm) : 0;
+  const beTotDia = ticketProm > 0 ? Math.ceil(costoTotal / DIAS_MES / ticketProm) : 0;
+
+  // Panel análisis
+  const analisisEl = document.getElementById('costos-analisis');
+  if(analisisEl) analisisEl.innerHTML = totalCF > 0 && ticketProm > 0 ? `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(195px,1fr));gap:12px;margin-bottom:1.25rem;">
+      <div class="stat" style="border-color:var(--red)">
+        <div class="slbl">Costos fijos/mes</div>
+        <div class="sval r">${fmt(totalCF)}</div>
+      </div>
+      <div class="stat" style="border-color:var(--amber)">
+        <div class="slbl">Sueldos estimados/mes</div>
+        <div class="sval a">${fmt(sueldosMes)}</div>
+        <div style="font-size:10px;color:var(--muted2);margin-top:2px">${cache.empleados.length} empl. × 26 días</div>
+      </div>
+      <div class="stat" style="border-color:var(--red)">
+        <div class="slbl">Costo total mensual</div>
+        <div class="sval r">${fmt(costoTotal)}</div>
+      </div>
+      <div class="stat">
+        <div class="slbl">Ticket prom. lavado</div>
+        <div class="sval c">${fmt(ticketProm)}</div>
+        <div style="font-size:10px;color:var(--muted2);margin-top:2px">promedio histórico</div>
+      </div>
+      <div class="stat" style="border-color:var(--cyan)">
+        <div class="slbl">🚗 Autos para cubrir fijos</div>
+        <div class="sval c">${beCF}/mes</div>
+        <div style="font-size:10px;color:var(--muted2);margin-top:2px">${beCFDia} por día</div>
+      </div>
+      <div class="stat" style="border-color:#a78bfa">
+        <div class="slbl">🚗 Autos para cubrir todo</div>
+        <div class="sval" style="color:#a78bfa">${beTotal}/mes</div>
+        <div style="font-size:10px;color:var(--muted2);margin-top:2px">${beTotDia} por día (+ sueldos)</div>
+      </div>
+    </div>
+  ` : `<div style="background:var(--dark2);border:1px solid var(--border);border-radius:10px;padding:14px 18px;margin-bottom:1.25rem;font-size:13px;color:var(--muted);text-align:center;">
+    ${totalCF === 0 ? 'Agregá costos fijos para ver el análisis de punto de equilibrio.' : 'Aún no hay lavados registrados con precio para calcular el ticket promedio.'}
+  </div>`;
+
+  // Tabla de costos agrupada por categoría
+  const cats = [...new Set(costos.map(c=>c.categoria))].sort();
+  const filas = cats.flatMap(cat => {
+    const del_cat = costos.filter(c=>c.categoria===cat);
+    const subTotal = del_cat.reduce((s,c)=>s+c.monto,0);
+    return [
+      ...del_cat.map(c=>`<tr>
+        <td style="font-weight:500;padding-left:14px">${c.nombre}</td>
+        <td style="color:var(--muted)">${c.categoria}</td>
+        <td style="font-weight:700;color:var(--red)">${fmt(c.monto)}</td>
+        <td><button class="btn br" onclick="eliminarCostoFijo('${c.id}')">✕</button></td>
+      </tr>`),
+      `<tr style="background:var(--dark3);">
+        <td colspan="2" style="font-size:11px;color:var(--muted2);padding-left:14px;">Subtotal ${cat}</td>
+        <td style="font-size:11px;color:var(--muted);font-weight:600;">${fmt(subTotal)}</td>
+        <td></td>
+      </tr>`
+    ];
+  });
+  if(totalCF > 0) filas.push(`<tr style="background:var(--dark3);border-top:2px solid var(--border2);">
+    <td colspan="2" style="font-weight:700;color:var(--text)">TOTAL MENSUAL</td>
+    <td style="font-weight:800;color:var(--red);font-size:16px">${fmt(totalCF)}</td>
+    <td></td>
+  </tr>`);
+
+  const tbodyCostos = document.getElementById('tbody-costos');
+  if(tbodyCostos) tbodyCostos.innerHTML = filas.length
+    ? filas.join('')
+    : '<tr><td colspan="4" class="empty">Sin costos registrados. Agregá el primero arriba.</td></tr>';
+}
+
+window.agregarCostoFijo = async function() {
+  const nombre = document.getElementById('cf-nombre').value.trim();
+  const monto  = Number(document.getElementById('cf-monto').value);
+  const cat    = document.getElementById('cf-cat').value;
+  if(!nombre) { toast('Ingresá un nombre','err'); return; }
+  if(!monto)  { toast('Ingresá un monto','err'); return; }
+  const btn = document.getElementById('btn-add-costo');
+  await withLoading(btn, async () => {
+    const costo = {nombre, categoria:cat, monto};
+    const id = await fsAdd('costosFijos', costo);
+    cache.costosFijos.push({id, ...costo});
+    await auditLog('COSTO FIJO', `${nombre} — ${fmt(monto)}/mes`);
+    renderCostosFijos();
+    renderDashboard();
+    toast('Costo guardado','ok');
+    document.getElementById('cf-nombre').value = '';
+    document.getElementById('cf-monto').value  = '';
+  });
+};
+
+window.eliminarCostoFijo = async function(id) {
+  if(!confirm('¿Eliminar este costo fijo?')) return;
+  await fsDel('costosFijos', id);
+  cache.costosFijos = cache.costosFijos.filter(c=>c.id!==id);
+  renderCostosFijos();
+  renderDashboard();
+  toast('Eliminado','ok');
+};
 
 function renderDashboard() {
   const h=hoy(), si=semIni(), mi=h.slice(0,7)+'-01';
@@ -512,6 +634,18 @@ function renderDashboard() {
     ${topSrv?`<div class="stat"><div class="slbl">Lavado top</div><div class="sval c" style="font-size:13px;">${topSrv[0]}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">${topSrv[1]} veces</div></div>`:''}
     <div class="stat" style="border-color:var(--amber)"><div class="slbl">A pagar empleados</div><div class="sval a">${fmt(deudaSemana)}</div><div style="font-size:10px;color:var(--muted2);margin-top:2px">rango seleccionado</div></div>
     <div class="stat" style="border-color:#a78bfa"><div class="slbl">💰 Extracciones dueños</div><div class="sval" style="color:#a78bfa">${fmt(totalExtracciones)}</div><div style="font-size:10px;color:var(--muted2);margin-top:2px">acumulado total</div></div>
+    ${(()=>{
+      const totalCF = (cache.costosFijos||[]).reduce((s,c)=>s+c.monto,0);
+      const lavCP   = cache.lavados.filter(l=>l.cat!=='Bebida'&&l.precio>0);
+      const iLav    = cache.caja.filter(c=>c.cat==='Lavado'&&c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
+      const tProm   = lavCP.length > 0 ? Math.round(iLav/lavCP.length) : 0;
+      const sueld   = cache.empleados.reduce((s,e)=>s+e.jornal,0)*26;
+      const beTotal = tProm > 0 ? Math.ceil((totalCF+sueld)/tProm) : 0;
+      const beDia   = tProm > 0 ? Math.ceil((totalCF+sueld)/26/tProm) : 0;
+      return totalCF > 0 && tProm > 0
+        ? `<div class="stat" style="border-color:var(--cyan)"><div class="slbl">🚗 Punto de equilibrio</div><div class="sval c">${beTotal}/mes</div><div style="font-size:10px;color:var(--muted2);margin-top:2px">${beDia} autos/día (fijos+sueldos)</div></div>`
+        : '';
+    })()}
   `;
 
   // Card empleados — ya existe en el HTML, solo actualizar contenido

@@ -62,6 +62,7 @@
   <button onclick="go('caja',this)">Caja</button>
   <button onclick="go('empleados',this)">Empleados</button>
   <button onclick="go('stock',this)">Stock Bebidas</button>
+  <button onclick="go('costos',this)">Costos Fijos</button>
   <button onclick="go('auditoria',this)">Auditoría</button>
   <button onclick="go('config',this)" id="nav-cfg" style="display:none">Config</button>
 </nav>
@@ -336,6 +337,47 @@
   <div class="card"><div class="card-hdr"><span class="card-title">Registro de actividad</span>
     <input type="text" id="audit-q" placeholder="Buscar..." oninput="renderAudit()" style="width:200px;font-size:12px;padding:5px 10px;"></div>
     <div class="card-body" id="audit-list" style="max-height:580px;overflow-y:auto;padding:0 1.25rem;"></div></div>
+</div>
+
+<!-- COSTOS FIJOS -->
+<div class="section" id="s-costos">
+
+  <!-- Panel análisis (se renderiza dinámicamente) -->
+  <div id="costos-analisis"></div>
+
+  <!-- Formulario para agregar costo -->
+  <div class="card" style="margin-bottom:1.25rem;">
+    <div class="card-hdr"><span class="card-title">Agregar costo fijo mensual</span></div>
+    <div class="card-body">
+      <div class="g4">
+        <div class="fg"><label class="lbl">Nombre</label>
+          <input type="text" id="cf-nombre" placeholder="Ej: Alquiler, Luz, Internet"></div>
+        <div class="fg"><label class="lbl">Categoría</label>
+          <select id="cf-cat">
+            <option>Alquiler</option>
+            <option>Servicios (luz/gas/internet)</option>
+            <option>Insumos de lavado</option>
+            <option>Impuestos</option>
+            <option>Otros</option>
+          </select></div>
+        <div class="fg"><label class="lbl">Monto mensual ($)</label>
+          <input type="number" id="cf-monto" placeholder="0" min="0"></div>
+      </div>
+      <div class="form-row">
+        <button class="btn bp" id="btn-add-costo" onclick="agregarCostoFijo()">Agregar costo</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Planilla de costos -->
+  <div class="card">
+    <div class="card-hdr"><span class="card-title">Planilla de costos fijos</span></div>
+    <div class="tw"><table>
+      <thead><tr><th>Nombre</th><th>Categoría</th><th>Monto/mes</th><th></th></tr></thead>
+      <tbody id="tbody-costos"></tbody>
+    </table></div>
+  </div>
+
 </div>
 
 <!-- CONFIG -->
