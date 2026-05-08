@@ -677,12 +677,17 @@ function renderDashboard() {
     const diasTrab  = diasEmp.filter(d=>(cache.asistencia[d]||[]).includes(e.id)).length;
     const bruto     = diasTrab * e.jornal;
     const adlPend   = cache.adelantos.filter(a=>a.empId===e.id&&!a.pagado).reduce((s,a)=>s+a.monto,0);
-    // Descontar el bruto ya cubierto en cierres de semana del rango
-    // Usamos ep.bruto (no ep.neto) porque los adelantos ya están marcados como pagados
-    // y no queremos contarlos dos veces
-    const yaPagado  = (cache.semanasPagadas||[])
+    // Descontar el bruto ya cubierto en cierres de semana del rango.
+    // Usamos ep.bruto (no ep.neto) porque los adelantos ya están marcados como pagados.
+    // Deduplicamos por f1+f2 para no contar doble si hay registros duplicados.
+    const semanasVistas = new Set();
+    const yaPagado = (cache.semanasPagadas||[])
       .filter(sp=>sp.f1>=empF1&&sp.f2<=empF2)
+      .sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''))
       .reduce((s,sp)=>{
+        const key = sp.f1+'|'+sp.f2;
+        if(semanasVistas.has(key)) return s;
+        semanasVistas.add(key);
         const ep = (sp.empleados||[]).find(x=>x.empId===e.id);
         return s + (ep ? (ep.bruto ?? ep.neto) : 0);
       }, 0);
@@ -1502,6 +1507,13 @@ window.cerrarSemana = async function() {
   const f1  = document.getElementById('sem-ini').value || semIni();
   const f2  = document.getElementById('sem-fin').value || semFin();
   const dias = diasEnRango(f1, f2);
+
+  // Guardia: no permitir pagar una semana ya cerrada
+  const yaExiste = (cache.semanasPagadas||[]).some(sp=>sp.f1===f1&&sp.f2===f2);
+  if(yaExiste) {
+    toast(`La semana ${fmtDL(f1)}–${fmtDL(f2)} ya fue pagada`, 'warn');
+    return;
+  }
 
   // ── Pre-calcular para mostrar resumen antes de confirmar ──────
   const datosEmp = cache.empleados.map(e => {
