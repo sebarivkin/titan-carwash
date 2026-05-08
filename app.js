@@ -676,7 +676,8 @@ function renderDashboard() {
   const resEmp = cache.empleados.map(e => {
     const diasTrab  = diasEmp.filter(d=>(cache.asistencia[d]||[]).includes(e.id)).length;
     const bruto     = diasTrab * e.jornal;
-    const adlPend   = cache.adelantos.filter(a=>a.empId===e.id&&!a.pagado).reduce((s,a)=>s+a.monto,0);
+    // Solo adelantos del período visible (mismo criterio que cerrarSemana)
+    const adlPend   = cache.adelantos.filter(a=>a.empId===e.id&&!a.pagado&&a.fecha>=empF1&&a.fecha<=empF2).reduce((s,a)=>s+a.monto,0);
     // Descontar el bruto ya cubierto en cierres de semana del rango.
     // Usamos ep.bruto (no ep.neto) porque los adelantos ya están marcados como pagados.
     // Deduplicamos por f1+f2 para no contar doble si hay registros duplicados.
@@ -1401,8 +1402,8 @@ function renderEmpleados() {
   const hoyS  = hoy();
 
   document.getElementById('emp-grid').innerHTML = cache.empleados.map(e => {
-    // Todos los adelantos pendientes (sin filtro de fecha — igual que cerrarSemana)
-    const adlSem   = cache.adelantos.filter(a=>a.empId===e.id&&!a.pagado);
+    // Solo adelantos pendientes dentro del período seleccionado (igual que cerrarSemana)
+    const adlSem   = cache.adelantos.filter(a=>a.empId===e.id&&!a.pagado&&a.fecha>=f1&&a.fecha<=f2);
     const totalAdl = adlSem.reduce((s,a)=>s+a.monto,0);
     const diasTrab = dias.filter(d=>(cache.asistencia[d]||[]).includes(e.id));
     const bruto    = diasTrab.length * e.jornal;
