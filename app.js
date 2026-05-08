@@ -677,12 +677,14 @@ function renderDashboard() {
     const diasTrab  = diasEmp.filter(d=>(cache.asistencia[d]||[]).includes(e.id)).length;
     const bruto     = diasTrab * e.jornal;
     const adlPend   = cache.adelantos.filter(a=>a.empId===e.id&&!a.pagado).reduce((s,a)=>s+a.monto,0);
-    // Descontar lo ya pagado por cierre de semana en este rango
+    // Descontar el bruto ya cubierto en cierres de semana del rango
+    // Usamos ep.bruto (no ep.neto) porque los adelantos ya están marcados como pagados
+    // y no queremos contarlos dos veces
     const yaPagado  = (cache.semanasPagadas||[])
       .filter(sp=>sp.f1>=empF1&&sp.f2<=empF2)
       .reduce((s,sp)=>{
         const ep = (sp.empleados||[]).find(x=>x.empId===e.id);
-        return s + (ep?ep.neto:0);
+        return s + (ep ? (ep.bruto ?? ep.neto) : 0);
       }, 0);
     const neto = bruto - adlPend - yaPagado;
     deudaSemana += Math.max(0, neto);
@@ -1394,6 +1396,7 @@ function renderEmpleados() {
   const hoyS  = hoy();
 
   document.getElementById('emp-grid').innerHTML = cache.empleados.map(e => {
+    // Todos los adelantos pendientes (sin filtro de fecha — igual que cerrarSemana)
     const adlSem   = cache.adelantos.filter(a=>a.empId===e.id&&!a.pagado);
     const totalAdl = adlSem.reduce((s,a)=>s+a.monto,0);
     const diasTrab = dias.filter(d=>(cache.asistencia[d]||[]).includes(e.id));
@@ -1496,42 +1499,70 @@ window.eliminarAdl = async function(id, empId, fecha, monto) {
 };
 
 window.cerrarSemana = async function() {
-  const f1   = document.getElementById('sem-ini').value || semIni();
-  const f2   = document.getElementById('sem-fin').value || semFin();
-  const dias  = diasEnRango(f1,f2);
-  if(!confirm(`¿Pagar semana del ${fmtDL(f1)} al ${fmtDL(f2)}?`)) return;
-  let total = 0;
+  const f1  = document.getElementById('sem-ini').value || semIni();
+  const f2  = document.getElementById('sem-fin').value || semFin();
+  const dias = diasEnRango(f1, f2);
+
+  // ── Pre-calcular para mostrar resumen antes de confirmar ──────
+  const datosEmp = cache.empleados.map(e => {
+    const diasTrab   = dias.filter(d=>(cache.asistencia[d]||[]).includes(e.id)).length;
+    const bruto      = diasTrab * e.jornal;
+    // TODOS los adelantos pendientes, sin filtrar por fecha
+    const adlsPend   = cache.adelantos.filter(a=>a.empId===e.id&&!a.pagado);
+    const adelantado = adlsPend.reduce((s,a)=>s+a.monto,0);
+    const neto       = bruto - adelantado;
+    return {e, diasTrab, bruto, adlsPend, adelantado, neto};
+  }).filter(x=>x.diasTrab>0||x.adelantado>0); // solo empleados con actividad
+
+  if(!datosEmp.length) { toast('Sin actividad en este período','warn'); return; }
+
+  const totalCaja = datosEmp.reduce((s,x)=>s+Math.max(0,x.neto),0);
+
+  // Resumen legible para el confirm
+  const lineas = datosEmp.map(x=>{
+    const adlTxt = x.adelantado>0 ? ` − ${fmt(x.adelantado)} adelantos` : '';
+    const nTxt   = x.neto>=0 ? `= ${fmt(x.neto)} a pagar` : `= ${fmt(Math.abs(x.neto))} a favor del negocio`;
+    return `• ${x.e.nombre}: ${x.diasTrab}d × ${fmt(x.e.jornal)}${adlTxt} ${nTxt}`;
+  });
+  lineas.push(`\nTOTAL a descontar de caja: ${fmt(totalCaja)}`);
+  if(!confirm(`PAGO DE SEMANA  ${fmtDL(f1)} al ${fmtDL(f2)}\n\n${lineas.join('\n')}\n\n¿Confirmar?`)) return;
+
+  // ── Ejecutar pagos ────────────────────────────────────────────
   const pagosEmpleados = [];
-  for(const e of cache.empleados) {
-    const diasTrab  = dias.filter(d=>(cache.asistencia[d]||[]).includes(e.id)).length;
-    const bruto     = diasTrab * e.jornal;
-    const adlsPend  = cache.adelantos.filter(a=>a.empId===e.id&&!a.pagado&&a.fecha>=f1&&a.fecha<=f2);
-    const adelantado= adlsPend.reduce((s,a)=>s+a.monto,0);
-    const neto      = Math.max(0, bruto - adelantado);
+  for(const {e, diasTrab, bruto, adlsPend, adelantado, neto} of datosEmp) {
+    // Marcar todos sus adelantos pendientes como pagados
     for(const a of adlsPend) {
       await fsUpdate('adelantos', a.id, {pagado:true});
       const ca = cache.adelantos.find(x=>x.id===a.id);
       if(ca) ca.pagado = true;
     }
+    // Solo registrar egreso en caja si hay diferencia positiva a pagar
     if(neto > 0) {
       const cm = {fecha:hoy(), tipo:'egreso', cat:'Sueldos',
         desc:`Sueldo ${e.nombre} — ${diasTrab} días (${fmtDL(f1)} al ${fmtDL(f2)})`,
         monto:neto, pago:'Efectivo', user:cu.nombre};
       const cmId = await fsAdd('caja', cm);
       cache.caja.push({id:cmId, ...cm});
-      total += neto;
     }
     pagosEmpleados.push({empId:e.id, nombre:e.nombre, diasTrab, bruto, adelantado, neto});
   }
-  // Guardar semana como pagada para que el dashboard no la cuente como deuda
-  const semPagada = {f1, f2, total, fecha:hoy(), user:cu.nombre, empleados:pagosEmpleados};
+
+  // Guardar semana pagada
+  const semPagada = {f1, f2, total:totalCaja, fecha:hoy(), user:cu.nombre, empleados:pagosEmpleados};
   const spId = await fsAdd('semanasPagadas', semPagada);
   if(!cache.semanasPagadas) cache.semanasPagadas = [];
   cache.semanasPagadas.push({id:spId, ...semPagada});
 
-  await auditLog('CIERRE SEMANA', `${fmtDL(f1)} al ${fmtDL(f2)} — ${fmt(total)}`);
+  // ── Avanzar automáticamente a la próxima semana ───────────────
+  const sig = new Date(f2+'T12:00'); sig.setDate(sig.getDate()+1); // lunes siguiente
+  const sigFin = new Date(sig); sigFin.setDate(sig.getDate()+6);    // domingo siguiente
+  const fmtFecha = d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  document.getElementById('sem-ini').value = fmtFecha(sig);
+  document.getElementById('sem-fin').value = fmtFecha(sigFin);
+
+  await auditLog('CIERRE SEMANA', `${fmtDL(f1)} al ${fmtDL(f2)} — ${fmt(totalCaja)}`);
   renderEmpleados(); renderCaja(); renderDashboard();
-  toast(`Semana cerrada — Total: ${fmt(total)}`, 'ok');
+  toast(`Semana ${fmtDL(f1)}–${fmtDL(f2)} cerrada — ${fmt(totalCaja)} descontados de caja`, 'ok');
 };
 
 // ─── AUDITORÍA ─────────────────────────────────────────────────
