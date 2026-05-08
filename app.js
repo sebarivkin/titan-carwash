@@ -1553,16 +1553,26 @@ window.cerrarSemana = async function() {
   if(!cache.semanasPagadas) cache.semanasPagadas = [];
   cache.semanasPagadas.push({id:spId, ...semPagada});
 
-  // ── Avanzar automáticamente a la próxima semana ───────────────
-  const sig = new Date(f2+'T12:00'); sig.setDate(sig.getDate()+1); // lunes siguiente
-  const sigFin = new Date(sig); sigFin.setDate(sig.getDate()+6);    // domingo siguiente
-  const fmtFecha = d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  document.getElementById('sem-ini').value = fmtFecha(sig);
-  document.getElementById('sem-fin').value = fmtFecha(sigFin);
-
   await auditLog('CIERRE SEMANA', `${fmtDL(f1)} al ${fmtDL(f2)} — ${fmt(totalCaja)}`);
+
+  // ── Mostrar estado "todo pagado" antes de avanzar ─────────────
   renderEmpleados(); renderCaja(); renderDashboard();
-  toast(`Semana ${fmtDL(f1)}–${fmtDL(f2)} cerrada — ${fmt(totalCaja)} descontados de caja`, 'ok');
+
+  const resumenPago = datosEmp.map(x=>
+    `${x.e.nombre}: ${x.neto > 0 ? fmt(x.neto) : '✓ $0'}`
+  ).join(' · ');
+  toast(`✓ Semana ${fmtDL(f1)}–${fmtDL(f2)} — Todo pagado al día  |  ${resumenPago}`, 'ok');
+
+  // ── Avanzar a la próxima semana luego de 2.5 s ────────────────
+  const fmtFecha = d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  setTimeout(() => {
+    const sig    = new Date(f2+'T12:00'); sig.setDate(sig.getDate()+1);
+    const sigFin = new Date(sig); sigFin.setDate(sig.getDate()+6);
+    document.getElementById('sem-ini').value = fmtFecha(sig);
+    document.getElementById('sem-fin').value = fmtFecha(sigFin);
+    renderEmpleados();
+    toast(`Semana ${fmtDL(fmtFecha(sig))}–${fmtDL(fmtFecha(sigFin))} lista para cargar`, 'ok');
+  }, 2500);
 };
 
 // ─── AUDITORÍA ─────────────────────────────────────────────────
