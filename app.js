@@ -1507,8 +1507,8 @@ window.cerrarSemana = async function() {
   const datosEmp = cache.empleados.map(e => {
     const diasTrab   = dias.filter(d=>(cache.asistencia[d]||[]).includes(e.id)).length;
     const bruto      = diasTrab * e.jornal;
-    // TODOS los adelantos pendientes, sin filtrar por fecha
-    const adlsPend   = cache.adelantos.filter(a=>a.empId===e.id&&!a.pagado);
+    // Solo adelantos pendientes dentro del rango de la semana
+    const adlsPend   = cache.adelantos.filter(a=>a.empId===e.id&&!a.pagado&&a.fecha>=f1&&a.fecha<=f2);
     const adelantado = adlsPend.reduce((s,a)=>s+a.monto,0);
     const neto       = bruto - adelantado;
     return {e, diasTrab, bruto, adlsPend, adelantado, neto};
