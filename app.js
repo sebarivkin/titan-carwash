@@ -1115,9 +1115,12 @@ window.confirmar = async function() {
 };
 
 function renderHistorial() {
-  const fecha = document.getElementById('reg-filtro').value || hoy();
-  const lavs  = cache.lavados.filter(l=>l.fecha===fecha).reverse();
-  const total = lavs.reduce((s,l)=>s+l.precio,0);
+  const fecha   = document.getElementById('reg-filtro').value || hoy();
+  const lavs    = cache.lavados.filter(l=>l.fecha===fecha).reverse();
+  const total   = lavs.reduce((s,l)=>s+l.precio,0);
+  const efectivo= lavs.filter(l=>l.pago==='Efectivo').reduce((s,l)=>s+l.precio,0);
+  const transf  = lavs.filter(l=>l.pago==='Transferencia').reduce((s,l)=>s+l.precio,0);
+  const otros   = lavs.filter(l=>l.pago!=='Efectivo'&&l.pago!=='Transferencia').reduce((s,l)=>s+l.precio,0);
   document.getElementById('tbody-reg').innerHTML = lavs.length
     ? lavs.map(l=>`<tr>
         <td>${l.hora}</td>
@@ -1129,8 +1132,11 @@ function renderHistorial() {
         <td><button class="btn br" onclick="eliminarLavado('${l.id}','${l.fecha}',${l.precio},'${l.servicio}','${l.patente||''}')">✕</button></td>
       </tr>`).join('') +
       `<tr class="total-row">
-        <td colspan="4" style="color:var(--muted);">Total — ${lavs.length} registro${lavs.length!==1?'s':''}</td>
-        <td style="color:var(--green)">${fmt(total)}</td>
+        <td colspan="3" style="color:var(--muted);">${lavs.length} registro${lavs.length!==1?'s':''}</td>
+        <td style="font-size:11px;color:var(--muted);">
+          💵 ${fmt(efectivo)}&nbsp;&nbsp;💳 ${fmt(transf)}${otros>0?`&nbsp;&nbsp;🔹 ${fmt(otros)}`:''}
+        </td>
+        <td style="color:var(--green);font-weight:800">${fmt(total)}</td>
         <td colspan="2"></td>
       </tr>`
     : '<tr><td colspan="7" class="empty">Sin registros para esta fecha</td></tr>';
