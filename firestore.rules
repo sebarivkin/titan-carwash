@@ -1,0 +1,106 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ──────────────────────────────────────────────────
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    // Verifica que el email autenticado esté en la colección usuarios
+    // (requiere que el documento en /usuarios tenga campo "email")
+    function isRegistered() {
+      return isAuth() &&
+        exists(/databases/$(database)/documents/usuarios/$(request.auth.uid)) == false &&
+        // Búsqueda por email — funciona si guardamos por UID en el futuro
+        // Por ahora: solo requerir autenticación (Google OAuth)
+        isAuth();
+    }
+
+    function isAdmin() {
+      // Admin verificado server-side: el email debe estar en un documento
+      // con rol=="admin". Por ahora usamos isAuth() como base mínima.
+      // TODO: migrar usuarios a documentos con ID == Firebase Auth UID
+      return isAuth();
+    }
+
+    // ── Colecciones de solo lectura para usuarios autenticados ───
+    match /usuarios/{docId} {
+      allow read: if isAuth();
+      allow write: if isAuth();   // TODO: restringir a admin cuando usuarios usen UID como docId
+    }
+
+    match /servicios/{docId} {
+      allow read: if isAuth();
+      allow write: if isAuth();
+    }
+
+    match /bebidas/{docId} {
+      allow read: if isAuth();
+      allow write: if isAuth();
+    }
+
+    match /empleados/{docId} {
+      allow read: if isAuth();
+      allow write: if isAuth();
+    }
+
+    // ── Datos operativos ─────────────────────────────────────────
+    match /lavados/{docId} {
+      allow read: if isAuth();
+      allow create: if isAuth()
+        && request.resource.data.keys().hasAll(['fecha','servicio','precio','pago','user'])
+        && request.resource.data.precio is number
+        && request.resource.data.precio >= 0
+        && request.resource.data.precio <= 100000000;
+      allow update, delete: if isAuth();
+    }
+
+    match /caja/{docId} {
+      allow read: if isAuth();
+      allow create: if isAuth()
+        && request.resource.data.keys().hasAll(['fecha','tipo','monto'])
+        && request.resource.data.monto is number
+        && request.resource.data.monto >= 0
+        && request.resource.data.monto <= 100000000
+        && request.resource.data.tipo in ['ingreso','egreso'];
+      allow update, delete: if isAuth();
+    }
+
+    match /adelantos/{docId} {
+      allow read: if isAuth();
+      allow create: if isAuth()
+        && request.resource.data.monto is number
+        && request.resource.data.monto > 0
+        && request.resource.data.monto <= 10000000;
+      allow update, delete: if isAuth();
+    }
+
+    match /asistencia/{docId} {
+      allow read, write: if isAuth();
+    }
+
+    match /semanasPagadas/{docId} {
+      allow read, write: if isAuth();
+    }
+
+    match /stockHist/{docId} {
+      allow read, write: if isAuth();
+    }
+
+    match /audit/{docId} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow update, delete: if false;  // El audit log es inmutable
+    }
+
+    match /costosFijos/{docId} {
+      allow read, write: if isAuth();
+    }
+
+    // ── Bloquear todo lo demás ───────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

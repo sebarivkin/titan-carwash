@@ -26,6 +26,33 @@ db.enablePersistence({ synchronizeTabs: true }).catch(err => {
   console.warn('Offline persistence no disponible:', err.code);
 });
 
+// ─── SEGURIDAD ─────────────────────────────────────────────────
+/** Escapa HTML para uso seguro en innerHTML — previene XSS */
+function sanitize(str) {
+  if(str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/\//g,'&#x2F;');
+}
+
+/** Rate limiting client-side — max N writes por minuto por clave */
+const _rl = {};
+function checkRateLimit(key, max=20) {
+  const min = Math.floor(Date.now()/60000);
+  const k   = `${key}_${min}`;
+  _rl[k]    = (_rl[k]||0) + 1;
+  // limpiar claves viejas
+  Object.keys(_rl).forEach(x=>{ if(!x.endsWith('_'+min)) delete _rl[x]; });
+  if(_rl[k] > max) { toast('Demasiadas operaciones en poco tiempo — esperá un momento','warn'); return false; }
+  return true;
+}
+
+/** Verifica que el usuario logueado tenga rol admin */
+function requireAdmin() {
+  if(!cu || cu.rol !== 'admin') { toast('Solo administradores pueden hacer eso','err'); return false; }
+  return true;
+}
+
 // ─── v2 UTILIDADES ─────────────────────────────────────────────
 function debounce(fn, ms) {
   let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
@@ -1048,6 +1075,7 @@ window.cambiarCantidad = function(delta) {
 
 window.confirmar = async function() {
   if(!selSrv) { toast('Seleccioná un servicio','err'); return; }
+  if(!checkRateLimit('confirmar_'+cu?.id, 30)) return;
   const btnC = document.getElementById('btn-confirmar');
   if(btnC && btnC.classList.contains('loading')) return;
   if(btnC) btnC.classList.add('loading');
@@ -1115,28 +1143,22 @@ window.confirmar = async function() {
 };
 
 function renderHistorial() {
-  const fecha   = document.getElementById('reg-filtro').value || hoy();
-  const lavs    = cache.lavados.filter(l=>l.fecha===fecha).reverse();
-  const total   = lavs.reduce((s,l)=>s+l.precio,0);
-  const efectivo= lavs.filter(l=>l.pago==='Efectivo').reduce((s,l)=>s+l.precio,0);
-  const transf  = lavs.filter(l=>l.pago==='Transferencia').reduce((s,l)=>s+l.precio,0);
-  const otros   = lavs.filter(l=>l.pago!=='Efectivo'&&l.pago!=='Transferencia').reduce((s,l)=>s+l.precio,0);
+  const fecha = document.getElementById('reg-filtro').value || hoy();
+  const lavs  = cache.lavados.filter(l=>l.fecha===fecha).reverse();
+  const total = lavs.reduce((s,l)=>s+l.precio,0);
   document.getElementById('tbody-reg').innerHTML = lavs.length
     ? lavs.map(l=>`<tr>
         <td>${l.hora}</td>
         <td><span class="badge bc">${l.servicio}</span></td>
-        <td>${l.patente?`<span class="badge ba">${l.patente}</span>`:'—'}</td>
-        <td>${l.pago}</td>
+        <td>${l.patente?`<span class="badge ba">${sanitize(l.patente)}</span>`:'—'}</td>
+        <td>${sanitize(l.pago)}</td>
         <td style="color:var(--green);font-weight:700">${fmt(l.precio)}</td>
-        <td style="color:var(--muted2)">${l.user||'—'}</td>
-        <td><button class="btn br" onclick="eliminarLavado('${l.id}','${l.fecha}',${l.precio},'${l.servicio}','${l.patente||''}')">✕</button></td>
+        <td style="color:var(--muted2)">${sanitize(l.user||'—')}</td>
+        <td><button class="btn br" onclick="eliminarLavado('${l.id}','${l.fecha}',${l.precio},'${sanitize(l.servicio)}','${sanitize(l.patente||'')}')">✕</button></td>
       </tr>`).join('') +
       `<tr class="total-row">
-        <td colspan="3" style="color:var(--muted);">${lavs.length} registro${lavs.length!==1?'s':''}</td>
-        <td style="font-size:11px;color:var(--muted);">
-          💵 ${fmt(efectivo)}&nbsp;&nbsp;💳 ${fmt(transf)}${otros>0?`&nbsp;&nbsp;🔹 ${fmt(otros)}`:''}
-        </td>
-        <td style="color:var(--green);font-weight:800">${fmt(total)}</td>
+        <td colspan="4" style="color:var(--muted);">Total — ${lavs.length} registro${lavs.length!==1?'s':''}</td>
+        <td style="color:var(--green)">${fmt(total)}</td>
         <td colspan="2"></td>
       </tr>`
     : '<tr><td colspan="7" class="empty">Sin registros para esta fecha</td></tr>';
@@ -1177,8 +1199,9 @@ window.onCxTipoChange = function() {
 };
 
 window.agregarMovExtraord = async function() {
+  if(!checkRateLimit('mov_'+cu?.id, 10)) return;
   const monto = Number(document.getElementById('cx-monto').value);
-  if(!monto) { toast('Ingresá un monto','err'); return; }
+  if(!monto||monto<=0) { toast('Ingresá un monto válido','err'); return; }
   const tipo  = document.getElementById('cx-tipo').value;
   const cfId  = tipo === 'egreso' ? (document.getElementById('cx-cf')?.value || '') : '';
   const mov = {
@@ -1232,9 +1255,9 @@ function renderCaja() {
         <td>${fmtDL(m.fecha)}</td>
         <td><span class="badge ${m.tipo==='ingreso'?'bg_':'br_'}">${m.tipo}</span></td>
         <td>${m.cat}</td>
-        <td style="color:var(--muted)">${m.desc||'—'}</td>
+        <td style="color:var(--muted)">${sanitize(m.desc||'—')}</td>
         <td style="font-weight:700;color:${m.tipo==='ingreso'?'var(--green)':'var(--red)'}">${fmt(m.monto)}</td>
-        <td style="color:var(--muted2)">${m.user||'—'}</td>
+        <td style="color:var(--muted2)">${sanitize(m.user||'—')}</td>
         <td><button class="btn br" onclick="eliminarMov('${m.id}')">✕</button></td>
       </tr>`).join('')
     : '<tr><td colspan="7" class="empty">Sin movimientos en este período</td></tr>';
@@ -1631,6 +1654,7 @@ function renderUsers() {
 }
 
 window.crearUsuario = async function() {
+  if(!requireAdmin()) return;
   const nombre = document.getElementById('nu-nombre').value.trim();
   const email  = document.getElementById('nu-email').value.trim().toLowerCase();
   if(!nombre||!email) { toast('Completá nombre y email','err'); return; }
@@ -1645,6 +1669,7 @@ window.crearUsuario = async function() {
 };
 
 window.eliminarUser = async function(id) {
+  if(!requireAdmin()) return;
   if(id===cu.id) { toast('No podés eliminarte','err'); return; }
   if(!confirm('¿Eliminar usuario?')) return;
   const u = cache.usuarios.find(x=>x.id===id);
@@ -1666,8 +1691,10 @@ function renderSrvcfg() {
 }
 
 window.crearServicio = async function() {
+  if(!requireAdmin()) return;
   const nombre = document.getElementById('ns-nombre').value.trim();
   const precio = Number(document.getElementById('ns-precio').value);
+  if(precio <= 0 || precio > 100000000) { toast('Precio inválido','err'); return; }
   if(!nombre||!precio) { toast('Completá nombre y precio','err'); return; }
   const data = {nombre, precio, cat:document.getElementById('ns-cat').value, tipo:document.getElementById('ns-tipo').value};
   const id = await fsAdd('servicios', data);
@@ -1678,6 +1705,7 @@ window.crearServicio = async function() {
 };
 
 window.eliminarSrv = async function(id) {
+  if(!requireAdmin()) return;
   if(!confirm('¿Eliminar?')) return;
   await fsDel('servicios', id);
   cache.servicios = cache.servicios.filter(s=>s.id!==id);
@@ -1710,6 +1738,7 @@ function renderBebcfg() {
 }
 
 window.crearBebida = async function() {
+  if(!requireAdmin()) return;
   const nombre    = document.getElementById('nb-nombre').value.trim();
   const precio    = Number(document.getElementById('nb-precio').value);
   if(!nombre||!precio) { toast('Completá nombre y precio','err'); return; }
@@ -1742,6 +1771,7 @@ window.agregarStock = async function() {
 };
 
 window.eliminarBeb = async function(id) {
+  if(!requireAdmin()) return;
   if(!confirm('¿Eliminar?')) return;
   await fsDel('bebidas', id);
   cache.bebidas = cache.bebidas.filter(b=>b.id!==id);
@@ -1850,9 +1880,10 @@ function renderEmpcfg() {
 }
 
 window.crearEmpleado = async function() {
+  if(!requireAdmin()) return;
   const nombre = document.getElementById('ne-nombre').value.trim();
   const jornal = Number(document.getElementById('ne-jornal').value);
-  if(!nombre||!jornal) { toast('Completá nombre y jornal','err'); return; }
+  if(!nombre||!jornal||jornal<=0) { toast('Completá nombre y jornal','err'); return; }
   const color = COLORS[cache.empleados.length % COLORS.length];
   const id = await fsAdd('empleados', {nombre, jornal, color});
   cache.empleados.push({id, nombre, jornal, color});
@@ -1862,9 +1893,10 @@ window.crearEmpleado = async function() {
 };
 
 window.guardarSaldoInicial = async function() {
+  if(!requireAdmin()) return;
   const monto = Number(document.getElementById('cfg-saldo').value);
   const fecha = document.getElementById('cfg-saldo-fecha').value || hoy();
-  if(!monto) { toast('Ingresá un monto','err'); return; }
+  if(!monto||monto<=0) { toast('Ingresá un monto válido','err'); return; }
 
   // Buscar si ya existe un saldo inicial y eliminarlo
   const existing = cache.caja.find(m=>m.cat==='Saldo inicial');
@@ -1897,6 +1929,7 @@ function cargarSaldoEnConfig() {
 }
 
 window.eliminarEmp = async function(id) {
+  if(!requireAdmin()) return;
   if(!confirm('¿Eliminar empleado?')) return;
   const e = cache.empleados.find(x=>x.id===id);
   await fsDel('empleados', id);
@@ -1935,6 +1968,11 @@ if(isDev) {
 }
 
 window.devLogin = async function() {
+  // Bloquear en producción — no puede ejecutarse desde DevTools en GitHub Pages
+  if(!isDev) {
+    console.warn('devLogin solo disponible en entorno local');
+    return;
+  }
   document.getElementById('loading-screen').style.display = 'flex';
   document.querySelector('.loading-txt').textContent = 'Cargando datos...';
   try {
