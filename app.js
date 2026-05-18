@@ -340,10 +340,19 @@ auth.onAuthStateChanged(async (firebaseUser) => {
   document.querySelector('.loading-txt').textContent = 'Verificando acceso...';
 
   // Asegurar que los datos están cargados
-  if(cache.usuarios.length === 0) await loadAllFromFirebase();
+  try {
+    if(cache.usuarios.length === 0) await loadAllFromFirebase();
+  } catch(e) {
+    console.error('Error cargando datos de Firebase:', e);
+    document.querySelector('.loading-txt').textContent = 'Error al conectar con Firebase: ' + e.message;
+    return;
+  }
 
-  const email = firebaseUser.email.toLowerCase();
-  const found = cache.usuarios.find(u => u.email && u.email.toLowerCase() === email);
+  const email = firebaseUser.email.toLowerCase().trim();
+  const found = cache.usuarios.find(u => u.email && u.email.toLowerCase().trim() === email);
+
+  console.log('Login intent:', email, '| usuarios cargados:', cache.usuarios.length, '| encontrado:', !!found);
+  if(!found) console.warn('Emails en sistema:', cache.usuarios.map(u=>u.email));
 
   if(!found) {
     // Email no autorizado
