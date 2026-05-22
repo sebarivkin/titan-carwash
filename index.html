@@ -77,6 +77,7 @@
   <button onclick="go('empleados',this)">Empleados</button>
   <button onclick="go('stock',this)">Stock Bebidas</button>
   <button onclick="go('costos',this)">Costos Fijos</button>
+  <button onclick="go('recibos',this)">Recibos</button>
   <button onclick="go('auditoria',this)">Auditoría</button>
   <button onclick="go('config',this)" id="nav-cfg" style="display:none">Config</button>
 </nav>
@@ -463,6 +464,67 @@
       <thead><tr><th>Fecha/Hora</th><th>Bebida</th><th>Movimiento</th><th>Stock resultante</th><th>Usuario</th></tr></thead>
       <tbody id="tbody-stock-hist"></tbody>
     </table></div>
+  </div>
+</div>
+
+<!-- RECIBOS -->
+<div class="section" id="s-recibos">
+  <div style="display:grid;grid-template-columns:1fr 1.15fr;gap:1.25rem;align-items:start;">
+
+    <!-- Formulario -->
+    <div class="card" style="margin:0">
+      <div class="card-hdr"><span class="card-title">Datos del recibo</span></div>
+      <div class="card-body">
+        <div class="g2">
+          <div class="fg"><label class="lbl">Fecha</label>
+            <input type="date" id="rcb-fecha" oninput="updateReciboPreview()"></div>
+          <div class="fg"><label class="lbl">N° Recibo</label>
+            <input type="text" id="rcb-numero" oninput="updateReciboPreview()" placeholder="0001"></div>
+        </div>
+        <div class="fg"><label class="lbl">Cliente / Razón Social</label>
+          <input type="text" id="rcb-cliente" oninput="updateReciboPreview()" placeholder="Nombre completo del cliente"></div>
+        <div class="fg"><label class="lbl">DNI / CUIT <span style="font-weight:400;color:var(--muted2)">(opcional)</span></label>
+          <input type="text" id="rcb-dni" oninput="updateReciboPreview()" placeholder="20-12345678-9"></div>
+        <div class="fg"><label class="lbl">Servicio</label>
+          <select id="rcb-servicio" onchange="onReciboServicioChange()">
+            <option value="">— Seleccionar servicio —</option>
+          </select></div>
+        <div class="fg"><label class="lbl">Detalle</label>
+          <input type="text" id="rcb-detalle" oninput="updateReciboPreview()" placeholder="Ej: Lavado completo + encerado"></div>
+        <div class="fg"><label class="lbl">Patente <span style="font-weight:400;color:var(--muted2)">(opcional)</span></label>
+          <input type="text" id="rcb-patente" oninput="updateReciboPreview()" placeholder="ABC123" style="text-transform:uppercase"></div>
+        <div class="g2">
+          <div class="fg"><label class="lbl">Importe ($)</label>
+            <input type="number" id="rcb-importe" oninput="updateReciboPreview()" placeholder="0" min="0"></div>
+          <div class="fg"><label class="lbl">Forma de pago</label>
+            <select id="rcb-pago" onchange="updateReciboPreview()">
+              <option>Efectivo</option><option>Transferencia</option>
+              <option>Débito</option><option>Crédito</option>
+            </select></div>
+        </div>
+        <div class="form-row" style="margin-top:1rem;">
+          <button class="btn bs" onclick="limpiarRecibo()">Nuevo recibo</button>
+          <button class="btn bg" onclick="compartirRecibo()" style="gap:6px;">📧 Enviar por email</button>
+          <button class="btn bp" onclick="imprimirRecibo()" style="gap:6px;">🖨️ Generar PDF</button>
+        </div>
+        <p style="font-size:10px;color:var(--muted2);margin-top:10px;line-height:1.6;">
+          "Generar PDF" abre una ventana lista para imprimir o guardar como PDF.<br>
+          "Enviar por email" abre tu cliente de correo — adjuntá el PDF generado.
+        </p>
+      </div>
+    </div>
+
+    <!-- Preview en vivo -->
+    <div class="card" style="margin:0">
+      <div class="card-hdr">
+        <span class="card-title">Vista previa</span>
+        <span style="font-size:11px;color:var(--muted)">Se actualiza en tiempo real</span>
+      </div>
+      <div style="padding:1.25rem;background:#2a2a2a;min-height:420px;display:flex;align-items:flex-start;justify-content:center;">
+        <div id="recibo-preview" style="background:#fff;width:100%;max-width:400px;padding:1.75rem;border-radius:4px;box-shadow:0 4px 20px rgba(0,0,0,.4);"></div>
+      </div>
+    </div>
+
   </div>
 </div>
 

@@ -164,6 +164,7 @@ tr:hover td{background:rgba(0,196,212,.02);}
   .sg{grid-template-columns:1fr 1fr;}
   .qgrid{grid-template-columns:repeat(2,1fr);}
   .emp-grid{grid-template-columns:1fr;}
+  #s-recibos>div{grid-template-columns:1fr!important;}
 }
 
 /* ── v2 MEJORAS ────────────────────────────────────────────── */

@@ -410,6 +410,7 @@ window.go = function(id, btn) {
   if(id==='stock')     renderStock();
   if(id==='auditoria') renderAudit();
   if(id==='costos')    renderCostosFijos();
+  if(id==='recibos')   renderRecibos();
   if(id==='config')    { renderUsers(); renderSrvcfg(); renderBebcfg(); renderEmpcfg(); cargarSaldoEnConfig(); }
 };
 
@@ -1945,6 +1946,198 @@ window.eliminarEmp = async function(id) {
   cache.empleados = cache.empleados.filter(x=>x.id!==id);
   auditLog('ELIMINAR EMPLEADO', e?.nombre||id);
   renderEmpcfg(); renderEmpleados(); fillAdlEmp(); toast('Eliminado','ok');
+};
+
+// ─── RECIBOS ────────────────────────────────────────────────────
+let _logoDataUrl = '';
+
+// Cargar logo como base64 para embeber en el PDF imprimible
+(async function() {
+  try {
+    const res  = await fetch('logo.png');
+    const blob = await res.blob();
+    _logoDataUrl = await new Promise(r => {
+      const fr = new FileReader();
+      fr.onload = () => r(fr.result);
+      fr.readAsDataURL(blob);
+    });
+  } catch(e) { _logoDataUrl = ''; }
+})();
+
+function _rcbPeekNum() {
+  return String(parseInt(localStorage.getItem('titan_rcb_num')||'0') + 1).padStart(4,'0');
+}
+function _rcbNextNum() {
+  const n = parseInt(localStorage.getItem('titan_rcb_num')||'0') + 1;
+  localStorage.setItem('titan_rcb_num', n);
+  return String(n).padStart(4,'0');
+}
+
+function renderRecibos() {
+  const sel = document.getElementById('rcb-servicio');
+  if(!sel) return;
+  const opts = sortServicios(cache.servicios)
+    .map(s=>`<option value="${s.id}" data-precio="${s.precio}">${sanitize(s.nombre)} — ${fmt(s.precio)}</option>`)
+    .join('');
+  sel.innerHTML = `<option value="">— Seleccionar servicio —</option>${opts}<option value="custom">✏️ Ingresar manualmente</option>`;
+  if(!document.getElementById('rcb-fecha').value) {
+    document.getElementById('rcb-fecha').value = hoy();
+    document.getElementById('rcb-numero').value = _rcbPeekNum();
+  }
+  updateReciboPreview();
+}
+
+window.onReciboServicioChange = function() {
+  const sel = document.getElementById('rcb-servicio');
+  const opt = sel.options[sel.selectedIndex];
+  if(opt.value && opt.value !== 'custom') {
+    const srv = cache.servicios.find(s=>s.id===opt.value);
+    if(srv) {
+      document.getElementById('rcb-detalle').value = srv.nombre;
+      document.getElementById('rcb-importe').value = srv.precio;
+    }
+  } else if(opt.value === 'custom') {
+    document.getElementById('rcb-detalle').value = '';
+    document.getElementById('rcb-importe').value = '';
+    document.getElementById('rcb-detalle').focus();
+  }
+  updateReciboPreview();
+};
+
+window.updateReciboPreview = function() {
+  const v = id => document.getElementById(id)?.value || '';
+  const html = _buildReciboHTML({
+    fecha:   v('rcb-fecha') || hoy(),
+    numero:  v('rcb-numero') || '—',
+    cliente: v('rcb-cliente').trim() || '—',
+    dni:     v('rcb-dni').trim(),
+    detalle: v('rcb-detalle').trim() || '—',
+    patente: v('rcb-patente').trim().toUpperCase(),
+    importe: Number(v('rcb-importe')) || 0,
+    pago:    v('rcb-pago') || 'Efectivo',
+    logo:    _logoDataUrl
+  });
+  const preview = document.getElementById('recibo-preview');
+  if(preview) preview.innerHTML = html;
+};
+
+function _buildReciboHTML({fecha, numero, cliente, dni, detalle, patente, importe, pago, logo}) {
+  const logoTag = logo
+    ? `<img src="${logo}" style="width:72px;height:72px;object-fit:contain;">`
+    : `<div style="font-size:28px;font-weight:900;color:#00c4d4;">TITAN</div>`;
+  return `
+  <div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#222;line-height:1.5;">
+    <!-- Encabezado -->
+    <div style="text-align:center;padding-bottom:14px;margin-bottom:14px;border-bottom:3px solid #00c4d4;">
+      ${logoTag}
+      <div style="font-size:19px;font-weight:900;letter-spacing:1px;color:#141b24;margin-top:6px;">TITAN CAR WASH</div>
+      <div style="font-size:10px;color:#888;margin-top:1px;">Lavadero de Autos</div>
+      <div style="font-size:15px;font-weight:700;color:#00c4d4;letter-spacing:3px;margin-top:8px;">RECIBO DE PAGO</div>
+    </div>
+    <!-- N° y fecha -->
+    <div style="display:flex;justify-content:space-between;margin-bottom:12px;font-size:12px;color:#444;">
+      <span><b>N° Recibo:</b> ${sanitize(numero)}</span>
+      <span><b>Fecha:</b> ${fmtDL(fecha)}</span>
+    </div>
+    <!-- Cliente -->
+    <div style="border:1px solid #ddd;border-radius:5px;padding:10px 12px;margin-bottom:12px;">
+      <div style="font-size:9px;font-weight:700;color:#aaa;letter-spacing:.8px;margin-bottom:6px;">CLIENTE</div>
+      <div><b>Nombre:</b> ${sanitize(cliente)}</div>
+      ${dni ? `<div style="margin-top:3px;"><b>DNI / CUIT:</b> ${sanitize(dni)}</div>` : ''}
+    </div>
+    <!-- Servicio -->
+    <div style="border:1px solid #ddd;border-radius:5px;padding:10px 12px;margin-bottom:14px;">
+      <div style="font-size:9px;font-weight:700;color:#aaa;letter-spacing:.8px;margin-bottom:6px;">DETALLE DEL SERVICIO</div>
+      <div>${sanitize(detalle)}</div>
+      ${patente ? `<div style="margin-top:4px;color:#555;">Patente: <b>${sanitize(patente)}</b></div>` : ''}
+      <div style="margin-top:4px;color:#555;">Forma de pago: <b>${sanitize(pago)}</b></div>
+    </div>
+    <!-- Total -->
+    <div style="background:#141b24;border-radius:6px;padding:14px;text-align:center;margin-bottom:18px;">
+      <div style="font-size:10px;color:rgba(255,255,255,.55);letter-spacing:.8px;margin-bottom:4px;">TOTAL ABONADO</div>
+      <div style="font-size:30px;font-weight:900;color:#00c4d4;">${fmt(importe)}</div>
+    </div>
+    <!-- Firmas -->
+    <div style="display:flex;justify-content:space-between;margin-top:10px;padding-top:24px;">
+      <div style="width:44%;text-align:center;">
+        <div style="border-top:1px solid #bbb;padding-top:5px;font-size:10px;color:#888;">Firma y Sello</div>
+      </div>
+      <div style="width:44%;text-align:center;">
+        <div style="border-top:1px solid #bbb;padding-top:5px;font-size:10px;color:#888;">Recibí conforme</div>
+      </div>
+    </div>
+    <!-- Pie -->
+    <div style="text-align:center;margin-top:18px;padding-top:10px;border-top:1px solid #eee;font-size:10px;color:#aaa;">
+      Titan Car Wash — Gracias por su visita
+    </div>
+  </div>`;
+}
+
+window.imprimirRecibo = function() {
+  const v = id => document.getElementById(id)?.value || '';
+  // Consumir número solo al imprimir
+  const numActual = v('rcb-numero');
+  if(numActual === _rcbPeekNum()) {
+    _rcbNextNum(); // confirmar consumo
+  }
+  const html = _buildReciboHTML({
+    fecha:   v('rcb-fecha') || hoy(),
+    numero:  numActual || '—',
+    cliente: v('rcb-cliente').trim() || '—',
+    dni:     v('rcb-dni').trim(),
+    detalle: v('rcb-detalle').trim() || '—',
+    patente: v('rcb-patente').trim().toUpperCase(),
+    importe: Number(v('rcb-importe')) || 0,
+    pago:    v('rcb-pago') || 'Efectivo',
+    logo:    _logoDataUrl
+  });
+  const win = window.open('', '_blank', 'width=640,height=860');
+  win.document.write(`<!DOCTYPE html><html><head>
+    <meta charset="UTF-8">
+    <title>Recibo ${sanitize(numActual)} — Titan Car Wash</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { background: #fff; padding: 32px; }
+      @media print {
+        body { padding: 0; }
+        @page { margin: 1.5cm; size: A5 portrait; }
+      }
+    </style>
+  </head><body>
+    <div style="max-width:420px;margin:0 auto;">${html}</div>
+    <script>
+      window.onload = function() { setTimeout(function(){ window.print(); }, 300); };
+    <\/script>
+  </body></html>`);
+  win.document.close();
+  auditLog('RECIBO', `N°${numActual} — ${v('rcb-cliente')||'sin cliente'} — ${fmt(Number(v('rcb-importe'))||0)}`);
+};
+
+window.compartirRecibo = function() {
+  const v    = id => document.getElementById(id)?.value || '';
+  const num  = v('rcb-numero') || '—';
+  const cli  = v('rcb-cliente').trim() || 'Cliente';
+  const det  = v('rcb-detalle').trim() || '—';
+  const imp  = Number(v('rcb-importe')) || 0;
+  const fec  = v('rcb-fecha') || hoy();
+  const subj = `Recibo N° ${num} — Titan Car Wash`;
+  const body = `Estimado/a ${cli},\n\nAdjuntamos su recibo de pago:\n\n` +
+    `N° Recibo: ${num}\nFecha: ${fmtDL(fec)}\nServicio: ${det}\nTotal abonado: ${fmt(imp)}\n\n` +
+    `Gracias por elegirnos.\n\nTitan Car Wash`;
+  window.location.href = `mailto:?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`;
+  toast('Abriendo email — adjuntá el PDF que generaste','ok');
+};
+
+window.limpiarRecibo = function() {
+  ['rcb-cliente','rcb-dni','rcb-detalle','rcb-patente','rcb-importe'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.value = '';
+  });
+  document.getElementById('rcb-servicio').value = '';
+  document.getElementById('rcb-pago').value = 'Efectivo';
+  document.getElementById('rcb-fecha').value = hoy();
+  document.getElementById('rcb-numero').value = _rcbNextNum();
+  updateReciboPreview();
 };
 
 // ─── MODAL / TOAST ─────────────────────────────────────────────
