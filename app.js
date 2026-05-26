@@ -459,12 +459,16 @@ function renderCostosFijos() {
   const ingrSoloLav = cache.caja.filter(c=>c.cat==='Lavado'&&c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
   const ticketProm  = lavadosConPrecio.length > 0 ? Math.round(ingrSoloLav/lavadosConPrecio.length) : 0;
 
-  // Sueldos mensuales estimados: suma de jornales × 26 días laborables
-  const sueldosMes = cache.empleados.reduce((s,e)=>s+e.jornal,0) * 26;
+  // Días abiertos por mes — promedio real basado en asistencia (proxy: negocio abierto)
+  const diasAb      = Object.keys(cache.asistencia).filter(d => (cache.asistencia[d]||[]).length > 0);
+  const mesesAb     = [...new Set(diasAb.map(d=>d.slice(0,7)))];
+  const DIAS_MES    = mesesAb.length > 0 ? Math.round(diasAb.length / mesesAb.length) : 26;
+
+  // Sueldos mensuales estimados: suma de jornales × días abiertos promedio por mes
+  const sueldosMes = cache.empleados.reduce((s,e)=>s+e.jornal,0) * DIAS_MES;
   const costoTotal = totalCF + sueldosMes;
 
   // Punto de equilibrio
-  const DIAS_MES = 26;
   const beCF     = ticketProm > 0 ? Math.ceil(totalCF   / ticketProm) : 0;
   const beTotal  = ticketProm > 0 ? Math.ceil(costoTotal / ticketProm) : 0;
   const beCFDia  = ticketProm > 0 ? Math.ceil(totalCF   / DIAS_MES / ticketProm) : 0;
@@ -482,7 +486,7 @@ function renderCostosFijos() {
       <div class="stat" style="border-color:var(--amber)">
         <div class="slbl">Sueldos estimados/mes</div>
         <div class="sval a">${fmt(sueldosMes)}</div>
-        <div style="font-size:10px;color:var(--muted2);margin-top:2px">${cache.empleados.length} empl. × 26 días</div>
+        <div style="font-size:10px;color:var(--muted2);margin-top:2px">${cache.empleados.length} empl. × ${DIAS_MES} días/mes</div>
       </div>
       <div class="stat" style="border-color:var(--red)">
         <div class="slbl">Costo total mensual</div>
@@ -687,21 +691,33 @@ function renderDashboard() {
       </div>`).join('');
   } else { alertDiv.style.display = 'none'; }
 
-  // Promedios — cantidad usa todos los lavados, finanzas solo los que tienen precio
-  const diasConLavados  = [...new Set(soloLavados.map(l=>l.fecha))];
-  const diasConPrecio   = [...new Set(lavadosConPrecio.map(l=>l.fecha))];
-  const totalDias       = Math.max(1, diasConLavados.length);
-  const totalDiasFinanc = Math.max(1, diasConPrecio.length);
-  const promLavados     = (soloLavados.length / totalDias).toFixed(1);
+  // Días abiertos = días donde al menos un empleado fichó (el negocio estuvo abierto)
+  const diasAbiertos      = Object.keys(cache.asistencia).filter(d => (cache.asistencia[d]||[]).length > 0).sort();
+  const totalDiasAbiertos = Math.max(1, diasAbiertos.length);
+  // Meses con actividad → para saber cuántos días/mes promedio se trabaja
+  const mesesConActividad = [...new Set(diasAbiertos.map(d=>d.slice(0,7)))];
+  const diasPorMes        = mesesConActividad.length > 0 ? Math.round(diasAbiertos.length / mesesConActividad.length) : 26;
+
+  // Promedios — solo sobre días realmente abiertos (con personal fichado)
   const ingrSoloLav     = cache.caja.filter(c=>c.cat==='Lavado'&&c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
-  const promIngr        = Math.round(ingrSoloLav / totalDiasFinanc);
   const totalEgrOper    = cajaOp.filter(c=>c.tipo==='egreso'&&esOper(c)).reduce((s,c)=>s+c.monto,0);
-  const promUtil        = Math.round((totalIngr - totalEgrOper) / totalDiasFinanc);
+  const promLavados     = (soloLavados.length / totalDiasAbiertos).toFixed(1);
+  const promIngr        = Math.round(ingrSoloLav / totalDiasAbiertos);
+  const promUtil        = Math.round((totalIngr - totalEgrOper) / totalDiasAbiertos);
   const conteoSrv       = {};
   soloLavados.forEach(l=>{ conteoSrv[l.servicio]=(conteoSrv[l.servicio]||0)+1; });
   const topSrv          = Object.entries(conteoSrv).sort((a,b)=>b[1]-a[1])[0];
   // Ticket promedio: solo lavados con precio real
   const ticketProm      = lavadosConPrecio.length > 0 ? Math.round(ingrSoloLav / lavadosConPrecio.length) : 0;
+
+  // Análisis por día de semana — cuántos autos en promedio por cada día
+  const NOM_DIA  = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  const lavXDow  = [0,0,0,0,0,0,0];   // total lavados acumulado por día de semana
+  const aperXDow = [0,0,0,0,0,0,0];   // veces que ese día de semana estuvo abierto
+  soloLavados.forEach(l => { lavXDow[new Date(l.fecha+'T12:00').getDay()]++; });
+  diasAbiertos.forEach(d => { aperXDow[new Date(d+'T12:00').getDay()]++; });
+  const promXDow = lavXDow.map((t,i) => aperXDow[i] > 0 ? +(t/aperXDow[i]).toFixed(1) : 0);
+  const mejorDow = promXDow.indexOf(Math.max(...promXDow.filter((_,i)=>aperXDow[i]>0)));
 
   // Empleados: rango seleccionable — descontar lo ya pagado en ese rango
   const savedF1 = document.getElementById('dash-emp-f1')?.value;
@@ -742,9 +758,9 @@ function renderDashboard() {
     <div class="stat"><div class="slbl">Util. operativa sem.</div><div class="sval ${ingrS-egrSOper>=0?'g':'r'}">${fmt(ingrS-egrSOper)}</div></div>
     <div class="stat"><div class="slbl">Ingr. mes</div><div class="sval g">${fmt(ingrM)}</div></div>
     <div class="stat"><div class="slbl">Util. operativa mes</div><div class="sval ${ingrM-egrMOper>=0?'g':'r'}">${fmt(ingrM-egrMOper)}</div></div>
-    <div class="stat"><div class="slbl">Prom. lavados/día</div><div class="sval c">${promLavados}</div></div>
-    <div class="stat"><div class="slbl">Prom. ingr. lavados/día</div><div class="sval g">${fmt(promIngr)}</div></div>
-    <div class="stat"><div class="slbl">Prom. util. operativa/día</div><div class="sval ${promUtil>=0?'g':'r'}">${fmt(promUtil)}</div></div>
+    <div class="stat"><div class="slbl">Prom. lavados/día</div><div class="sval c">${promLavados}</div><div style="font-size:10px;color:var(--muted2);margin-top:2px">${totalDiasAbiertos} días abiertos</div></div>
+    <div class="stat"><div class="slbl">Prom. ingr. lavados/día</div><div class="sval g">${fmt(promIngr)}</div><div style="font-size:10px;color:var(--muted2);margin-top:2px">solo días con personal</div></div>
+    <div class="stat"><div class="slbl">Prom. util. operativa/día</div><div class="sval ${promUtil>=0?'g':'r'}">${fmt(promUtil)}</div><div style="font-size:10px;color:var(--muted2);margin-top:2px">solo días con personal</div></div>
     <div class="stat"><div class="slbl">Ticket prom. lavado</div><div class="sval a">${fmt(ticketProm)}</div></div>
     ${topSrv?`<div class="stat"><div class="slbl">Lavado top</div><div class="sval c" style="font-size:13px;">${topSrv[0]}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">${topSrv[1]} veces</div></div>`:''}
     <div class="stat" style="border-color:var(--amber)"><div class="slbl">A pagar empleados</div><div class="sval a">${fmt(deudaSemana)}</div><div style="font-size:10px;color:var(--muted2);margin-top:2px">rango seleccionado</div></div>
@@ -754,11 +770,11 @@ function renderDashboard() {
       const lavCP   = cache.lavados.filter(l=>l.cat!=='Bebida'&&l.precio>0);
       const iLav    = cache.caja.filter(c=>c.cat==='Lavado'&&c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
       const tProm   = lavCP.length > 0 ? Math.round(iLav/lavCP.length) : 0;
-      const sueld   = cache.empleados.reduce((s,e)=>s+e.jornal,0)*26;
+      const sueld   = cache.empleados.reduce((s,e)=>s+e.jornal,0) * diasPorMes;
       const beTotal = tProm > 0 ? Math.ceil((totalCF+sueld)/tProm) : 0;
-      const beDia   = tProm > 0 ? Math.ceil((totalCF+sueld)/26/tProm) : 0;
+      const beDia   = tProm > 0 ? Math.ceil((totalCF+sueld)/Math.max(1,diasPorMes)/tProm) : 0;
       return totalCF > 0 && tProm > 0
-        ? `<div class="stat" style="border-color:var(--cyan)"><div class="slbl">🚗 Punto de equilibrio</div><div class="sval c">${beTotal}/mes</div><div style="font-size:10px;color:var(--muted2);margin-top:2px">${beDia} autos/día (fijos+sueldos)</div></div>`
+        ? `<div class="stat" style="border-color:var(--cyan)"><div class="slbl">🚗 Punto de equilibrio</div><div class="sval c">${beTotal}/mes</div><div style="font-size:10px;color:var(--muted2);margin-top:2px">${beDia} autos/día · ~${diasPorMes}d/mes</div></div>`
         : '';
     })()}
   `;
@@ -813,6 +829,30 @@ function renderDashboard() {
       <div class="bc-lbl">${DIAS_S[new Date(d+'T12:00').getDay()]}${lav7[i]>0?'<br>'+lav7[i]:''}</div>
     </div>`;
   }).join('');
+
+  // Gráfico días de la semana
+  const dowEl = document.getElementById('dash-dow-chart');
+  const badgeEl = document.getElementById('mejor-dia-badge');
+  if(dowEl) {
+    const maxDow = Math.max(...promXDow, 1);
+    dowEl.innerHTML = NOM_DIA.map((nom,i) => {
+      const val  = promXDow[i];
+      const apert = aperXDow[i];
+      if(apert === 0) return `<div class="bc-col" style="flex:1;opacity:.3">
+        <div class="bc-val" style="font-size:9px;color:var(--muted2)"></div>
+        <div class="bc-bar" style="height:3px;background:var(--border);border-radius:4px 4px 0 0;width:100%;"></div>
+        <div class="bc-lbl" style="font-size:10px;color:var(--muted2)">${nom}</div>
+      </div>`;
+      const pct  = Math.max(4, Math.round((val/maxDow)*90));
+      const esBest = i === mejorDow;
+      return `<div class="bc-col" style="flex:1;" title="${nom}: ${val} autos/día (${apert} aperturas)">
+        <div class="bc-val" style="font-size:9px;color:${esBest?'var(--cyan)':'var(--muted)'};">${val}</div>
+        <div class="bc-bar ${esBest?'hoy':''}" style="height:${pct}px;background:${esBest?'var(--cyan)':'var(--border2)'};border-radius:4px 4px 0 0;width:100%;opacity:${esBest?'1':'.7'};"></div>
+        <div class="bc-lbl" style="font-size:10px;color:${esBest?'var(--cyan)':'var(--muted2)'};font-weight:${esBest?'700':'400'}">${nom}</div>
+      </div>`;
+    }).join('');
+    if(badgeEl) badgeEl.textContent = aperXDow.some(v=>v>0) ? `⭐ Mejor: ${NOM_DIA[mejorDow]} (${promXDow[mejorDow]} autos/día)` : '';
+  }
 
   // Últimos movimientos
   const movs = [...cajaOp].sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||'')||0).slice(0,8);
