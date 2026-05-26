@@ -459,8 +459,11 @@ function renderCostosFijos() {
   const ingrSoloLav = cache.caja.filter(c=>c.cat==='Lavado'&&c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
   const ticketProm  = lavadosConPrecio.length > 0 ? Math.round(ingrSoloLav/lavadosConPrecio.length) : 0;
 
-  // Días abiertos por mes — promedio real basado en asistencia (proxy: negocio abierto)
-  const diasAb      = Object.keys(cache.asistencia).filter(d => (cache.asistencia[d]||[]).length > 0);
+  // Días abiertos = lavados registrados ∪ asistencia de empleados
+  // (igual criterio que en renderDashboard — incluye período importado del Excel)
+  const _lavFechas  = new Set(cache.lavados.filter(l=>l.cat!=='Bebida').map(l=>l.fecha));
+  const _asistFechas= new Set(Object.keys(cache.asistencia).filter(d=>(cache.asistencia[d]||[]).length>0));
+  const diasAb      = [...new Set([..._lavFechas, ..._asistFechas])];
   const mesesAb     = [...new Set(diasAb.map(d=>d.slice(0,7)))];
   const DIAS_MES    = mesesAb.length > 0 ? Math.round(diasAb.length / mesesAb.length) : 26;
 
@@ -691,8 +694,12 @@ function renderDashboard() {
       </div>`).join('');
   } else { alertDiv.style.display = 'none'; }
 
-  // Días abiertos = días donde al menos un empleado fichó (el negocio estuvo abierto)
-  const diasAbiertos      = Object.keys(cache.asistencia).filter(d => (cache.asistencia[d]||[]).length > 0).sort();
+  // Días abiertos = días con lavados registrados OR con asistencia de empleados.
+  // El período 16/03-19/04 fue importado desde Excel (hay lavados pero no asistencia),
+  // por eso usamos la UNIÓN de ambos conjuntos como proxy de "el negocio estuvo abierto".
+  const diasConLavados2   = new Set(soloLavados.map(l=>l.fecha));
+  const diasConAsist      = new Set(Object.keys(cache.asistencia).filter(d => (cache.asistencia[d]||[]).length > 0));
+  const diasAbiertos      = [...new Set([...diasConLavados2, ...diasConAsist])].sort();
   const totalDiasAbiertos = Math.max(1, diasAbiertos.length);
   // Meses con actividad → para saber cuántos días/mes promedio se trabaja
   const mesesConActividad = [...new Set(diasAbiertos.map(d=>d.slice(0,7)))];
