@@ -378,7 +378,8 @@ auth.onAuthStateChanged(async (firebaseUser) => {
 function initFields() {
   const h = hoy(), si = semIni(), sf = semFin();
   document.getElementById('reg-fecha').value   = h;
-  document.getElementById('reg-filtro').value  = h;
+  document.getElementById('hist-f1').value     = h;
+  document.getElementById('hist-f2').value     = h;
   document.getElementById('cx-fecha').value    = h;
   document.getElementById('adl-fecha').value   = h;
   document.getElementById('cx-f1').value       = `${h.slice(0,7)}-01`;
@@ -1192,21 +1193,34 @@ window.confirmar = async function() {
   // Recordar última patente usada
   if(patente) localStorage.setItem('titan_last_plate', patente);
 
-  document.getElementById('reg-filtro').value = fechaReg;
+  document.getElementById('hist-f1').value = fechaReg;
+  document.getElementById('hist-f2').value = fechaReg;
   renderQGrid(); renderHistorial(); renderDashboard();
   document.getElementById('reg-patente').value = '';
   if(btnC) btnC.classList.remove('loading');
   toast(`${selSrv.nombre}${cantTxt}${extra} — ${fmt(selSrv.precio * cantidad)}`, 'ok');
 };
 
+function _filtrarHistorial() {
+  const f1   = document.getElementById('hist-f1')?.value || hoy();
+  const f2   = document.getElementById('hist-f2')?.value || hoy();
+  const tipo = document.getElementById('hist-tipo')?.value || '';
+  let lavs = cache.lavados.filter(l=>l.fecha>=f1&&l.fecha<=f2);
+  if(tipo==='lavado') lavs = lavs.filter(l=>l.cat!=='Bebida');
+  if(tipo==='bebida') lavs = lavs.filter(l=>l.cat==='Bebida');
+  return lavs.sort((a,b)=>a.fecha.localeCompare(b.fecha)||((a.hora||'').localeCompare(b.hora||'')));
+}
+
 function renderHistorial() {
-  const fecha = document.getElementById('reg-filtro').value || hoy();
-  const lavs  = cache.lavados.filter(l=>l.fecha===fecha).reverse();
+  const lavs  = _filtrarHistorial();
   const total = lavs.reduce((s,l)=>s+l.precio,0);
+  const f1    = document.getElementById('hist-f1')?.value || hoy();
+  const f2    = document.getElementById('hist-f2')?.value || hoy();
   document.getElementById('tbody-reg').innerHTML = lavs.length
     ? lavs.map(l=>`<tr>
-        <td>${l.hora}</td>
-        <td><span class="badge bc">${l.servicio}</span></td>
+        <td style="color:var(--muted);white-space:nowrap">${fmtD(l.fecha)}</td>
+        <td>${l.hora||'—'}</td>
+        <td><span class="badge ${l.cat==='Bebida'?'ba':'bc'}">${sanitize(l.servicio)}</span></td>
         <td>${l.patente?`<span class="badge ba">${sanitize(l.patente)}</span>`:'—'}</td>
         <td>${sanitize(l.pago)}</td>
         <td style="color:var(--green);font-weight:700">${fmt(l.precio)}</td>
@@ -1214,20 +1228,31 @@ function renderHistorial() {
         <td><button class="btn br" onclick="eliminarLavado('${l.id}','${l.fecha}',${l.precio},'${sanitize(l.servicio)}','${sanitize(l.patente||'')}')">✕</button></td>
       </tr>`).join('') +
       `<tr class="total-row">
-        <td colspan="4" style="color:var(--muted);">Total — ${lavs.length} registro${lavs.length!==1?'s':''}</td>
+        <td colspan="5" style="color:var(--muted)">Total — ${lavs.length} registro${lavs.length!==1?'s':''}</td>
         <td style="color:var(--green)">${fmt(total)}</td>
         <td colspan="2"></td>
       </tr>`
-    : '<tr><td colspan="7" class="empty">Sin registros para esta fecha</td></tr>';
+    : '<tr><td colspan="8" class="empty">Sin registros para este período</td></tr>';
 }
 
+window.setRangoHistorial = function(rango) {
+  const h = hoy();
+  if(rango==='hoy')    { document.getElementById('hist-f1').value=h; document.getElementById('hist-f2').value=h; }
+  if(rango==='semana') { document.getElementById('hist-f1').value=semIni(); document.getElementById('hist-f2').value=h; }
+  if(rango==='mes')    { document.getElementById('hist-f1').value=h.slice(0,7)+'-01'; document.getElementById('hist-f2').value=h; }
+  document.querySelectorAll('#s-registrar .qdate .qd').forEach(b=>b.classList.remove('on'));
+  event.target.classList.add('on');
+  renderHistorial();
+};
+
 window.exportarHistorial = function() {
-  const fecha = document.getElementById('reg-filtro').value || hoy();
-  const lavs  = cache.lavados.filter(l=>l.fecha===fecha).reverse();
+  const f1  = document.getElementById('hist-f1')?.value || hoy();
+  const f2  = document.getElementById('hist-f2')?.value || hoy();
+  const lavs = _filtrarHistorial();
   exportCSV(
-    ['Hora','Servicio','Patente','Pago','Precio','Operador'],
-    lavs.map(l=>[l.hora,l.servicio,l.patente||'',l.pago,l.precio,l.user||'']),
-    `historial-${fecha}.csv`
+    ['Fecha','Hora','Servicio','Categoría','Patente','Pago','Precio','Operador'],
+    lavs.map(l=>[l.fecha,l.hora||'',l.servicio,l.cat||'',l.patente||'',l.pago,l.precio,l.user||'']),
+    `historial-${f1}-${f2}.csv`
   );
 };
 

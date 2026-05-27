@@ -276,10 +276,22 @@
   <div class="card">
     <div class="card-hdr"><span class="card-title">Historial</span>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <input type="date" id="reg-filtro" oninput="renderHistorial()" style="font-size:12px;padding:5px 8px;width:140px;">
+        <div class="qdate">
+          <button class="qd on" onclick="setRangoHistorial('hoy')">Hoy</button>
+          <button class="qd" onclick="setRangoHistorial('semana')">Semana</button>
+          <button class="qd" onclick="setRangoHistorial('mes')">Mes</button>
+        </div>
+        <input type="date" id="hist-f1" oninput="renderHistorial()" style="font-size:12px;padding:5px 8px;width:130px;">
+        <span style="color:var(--muted);font-size:12px;">→</span>
+        <input type="date" id="hist-f2" oninput="renderHistorial()" style="font-size:12px;padding:5px 8px;width:130px;">
+        <select id="hist-tipo" onchange="renderHistorial()" style="font-size:12px;padding:5px 8px;width:130px;">
+          <option value="">Todos</option>
+          <option value="lavado">Solo lavados</option>
+          <option value="bebida">Solo bebidas</option>
+        </select>
         <button class="btn bs" onclick="exportarHistorial()" style="font-size:11px;padding:5px 10px;">↓ CSV</button>
       </div></div>
-    <div class="tw"><table><thead><tr><th>Hora</th><th>Servicio</th><th>Patente</th><th>Pago</th><th>Precio</th><th>Operador</th><th></th></tr></thead>
+    <div class="tw"><table><thead><tr><th>Fecha</th><th>Hora</th><th>Servicio</th><th>Patente</th><th>Pago</th><th>Precio</th><th>Operador</th><th></th></tr></thead>
     <tbody id="tbody-reg"></tbody></table></div>
   </div>
 </div>
