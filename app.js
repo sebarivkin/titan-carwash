@@ -1303,14 +1303,36 @@ window.agregarMovExtraord = async function() {
   document.getElementById('cx-cf').value    = '';
 };
 
+let _cxTipo = ''; // '' | 'ingreso' | 'egreso'
+
+window.setTipoCaja = function(tipo) {
+  _cxTipo = _cxTipo === tipo ? '' : tipo; // toggle
+  document.getElementById('cx-btn-ingr').classList.toggle('on', _cxTipo==='ingreso');
+  document.getElementById('cx-btn-egr' ).classList.toggle('on', _cxTipo==='egreso');
+  // Si se elige tipo rápido, limpiar combo de categoría
+  if(_cxTipo) document.getElementById('cx-fcat').value = '';
+  renderCaja();
+};
+
+window.onCajaCatChange = function() {
+  // Si se elige una categoría específica, limpiar filtro de tipo rápido
+  if(document.getElementById('cx-fcat').value) {
+    _cxTipo = '';
+    document.getElementById('cx-btn-ingr').classList.remove('on');
+    document.getElementById('cx-btn-egr' ).classList.remove('on');
+  }
+  renderCaja();
+};
+
 function renderCaja() {
   const f1  = document.getElementById('cx-f1').value;
   const f2  = document.getElementById('cx-f2').value;
   const cat = document.getElementById('cx-fcat').value;
   let movs  = [...cache.caja];
-  if(f1)  movs = movs.filter(m=>m.fecha>=f1);
-  if(f2)  movs = movs.filter(m=>m.fecha<=f2);
-  if(cat) movs = movs.filter(m=>m.cat===cat);
+  if(f1)     movs = movs.filter(m=>m.fecha>=f1);
+  if(f2)     movs = movs.filter(m=>m.fecha<=f2);
+  if(cat)    movs = movs.filter(m=>m.cat===cat);
+  if(_cxTipo) movs = movs.filter(m=>m.tipo===_cxTipo);
   movs.sort((a,b)=>b.fecha?.localeCompare(a.fecha||'')||0);
 
   const ingr      = movs.filter(m=>m.tipo==='ingreso'&&m.cat!=='Saldo inicial').reduce((s,m)=>s+m.monto,0);
