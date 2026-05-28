@@ -3,99 +3,99 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ── Helpers ──────────────────────────────────────────────────
-    function isAuth() {
-      return request.auth != null;
-    }
 
-    // Verifica que el email autenticado esté en la colección usuarios
-    // (requiere que el documento en /usuarios tenga campo "email")
-    function isRegistered() {
-      return isAuth() &&
-        exists(/databases/$(database)/documents/usuarios/$(request.auth.uid)) == false &&
-        // Búsqueda por email — funciona si guardamos por UID en el futuro
-        // Por ahora: solo requerir autenticación (Google OAuth)
-        isAuth();
+    // isAllowed(): el email del token Google debe estar en /config/allowlist.
+    // Si el documento todavía no existe (primer deploy), se permite el acceso
+    // temporalmente para que el admin pueda inicializarlo.
+    function isAllowed() {
+      return request.auth != null &&
+             request.auth.token.email_verified == true &&
+             (
+               !exists(/databases/$(database)/documents/config/allowlist) ||
+               request.auth.token.email in
+                 get(/databases/$(database)/documents/config/allowlist).data.emails
+             );
     }
 
     function isAdmin() {
-      // Admin verificado server-side: el email debe estar en un documento
-      // con rol=="admin". Por ahora usamos isAuth() como base mínima.
-      // TODO: migrar usuarios a documentos con ID == Firebase Auth UID
-      return isAuth();
+      return isAllowed() &&
+             exists(/databases/$(database)/documents/config/allowlist) &&
+             get(/databases/$(database)/documents/config/allowlist).data.emails[request.auth.token.email] == 'admin';
     }
 
-    // ── Colecciones de solo lectura para usuarios autenticados ───
+    // ── Config / allowlist ───────────────────────────────────────
+    // Solo admins pueden leer/escribir — EXCEPTO en el bootstrap inicial
+    // (cuando el documento no existe aún, permite crear para que el admin lo inicialice)
+    match /config/{docId} {
+      allow read:   if isAllowed();
+      allow create: if request.auth != null &&
+                       !exists(/databases/$(database)/documents/config/allowlist);
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // ── Catálogos — solo admin puede modificar ───────────────────
     match /usuarios/{docId} {
-      allow read: if isAuth();
-      allow write: if isAuth();   // TODO: restringir a admin cuando usuarios usen UID como docId
+      allow read:  if isAllowed();
+      allow write: if isAdmin();
     }
 
     match /servicios/{docId} {
-      allow read: if isAuth();
-      allow write: if isAuth();
-    }
-
-    match /bebidas/{docId} {
-      allow read: if isAuth();
-      allow write: if isAuth();
+      allow read:  if isAllowed();
+      allow write: if isAdmin();
     }
 
     match /empleados/{docId} {
-      allow read: if isAuth();
-      allow write: if isAuth();
+      allow read:  if isAllowed();
+      allow write: if isAdmin();
+    }
+
+    // Bebidas: cualquier usuario autorizado puede actualizar stock
+    match /bebidas/{docId} {
+      allow read:  if isAllowed();
+      allow write: if isAllowed();
     }
 
     // ── Datos operativos ─────────────────────────────────────────
     match /lavados/{docId} {
-      allow read: if isAuth();
-      allow create: if isAuth()
+      allow read: if isAllowed();
+      allow create: if isAllowed()
         && request.resource.data.keys().hasAll(['fecha','servicio','precio','pago','user'])
         && request.resource.data.precio is number
         && request.resource.data.precio >= 0
         && request.resource.data.precio <= 100000000;
-      allow update, delete: if isAuth();
+      allow update, delete: if isAllowed();
     }
 
     match /caja/{docId} {
-      allow read: if isAuth();
-      allow create: if isAuth()
+      allow read: if isAllowed();
+      allow create: if isAllowed()
         && request.resource.data.keys().hasAll(['fecha','tipo','monto'])
         && request.resource.data.monto is number
         && request.resource.data.monto >= 0
         && request.resource.data.monto <= 100000000
         && request.resource.data.tipo in ['ingreso','egreso'];
-      allow update, delete: if isAuth();
+      allow update, delete: if isAllowed();
     }
 
     match /adelantos/{docId} {
-      allow read: if isAuth();
-      allow create: if isAuth()
+      allow read: if isAllowed();
+      allow create: if isAllowed()
         && request.resource.data.monto is number
         && request.resource.data.monto > 0
         && request.resource.data.monto <= 10000000;
-      allow update, delete: if isAuth();
+      allow update, delete: if isAllowed();
     }
 
-    match /asistencia/{docId} {
-      allow read, write: if isAuth();
-    }
-
-    match /semanasPagadas/{docId} {
-      allow read, write: if isAuth();
-    }
-
-    match /stockHist/{docId} {
-      allow read, write: if isAuth();
-    }
+    match /asistencia/{docId}     { allow read, write: if isAllowed(); }
+    match /semanasPagadas/{docId} { allow read, write: if isAllowed(); }
+    match /stockHist/{docId}      { allow read, write: if isAllowed(); }
+    match /costosFijos/{docId}    { allow read, write: if isAllowed(); }
 
     match /audit/{docId} {
-      allow read: if isAuth();
-      allow create: if isAuth();
-      allow update, delete: if false;  // El audit log es inmutable
-    }
-
-    match /costosFijos/{docId} {
-      allow read, write: if isAuth();
+      allow read:          if isAllowed();
+      allow create:        if isAllowed();
+      allow update, delete: if false;   // audit log inmutable
     }
 
     // ── Bloquear todo lo demás ───────────────────────────────────

@@ -373,6 +373,22 @@ auth.onAuthStateChanged(async (firebaseUser) => {
   auditLog('LOGIN', `${email}`);
   initFields();
   renderAll();
+
+  // Auto-inicializar allowlist si es admin y todavía no existe.
+  // Esto corre silenciosamente en background — la app ya está cargada.
+  if(found.rol === 'admin') {
+    db.collection('config').doc('allowlist').get().then(snap => {
+      if(!snap.exists) {
+        const emails = {};
+        cache.usuarios.forEach(u => {
+          if(u.email) emails[u.email.toLowerCase().trim()] = u.rol || 'user';
+        });
+        db.collection('config').doc('allowlist').set({ emails })
+          .then(() => console.log('[Security] Allowlist inicializada con', Object.keys(emails).length, 'usuarios'))
+          .catch(e => console.error('[Security] Error inicializando allowlist:', e));
+      }
+    }).catch(e => console.warn('[Security] No se pudo verificar allowlist:', e));
+  }
 });
 
 function initFields() {
@@ -1764,9 +1780,19 @@ window.crearUsuario = async function() {
   if(!nombre||!email) { toast('Completá nombre y email','err'); return; }
   if(!email.includes('@')) { toast('Email inválido','err'); return; }
   if(cache.usuarios.find(u=>u.email&&u.email.toLowerCase()===email)) { toast('Ese email ya existe','err'); return; }
-  const data = {nombre, email, rol:document.getElementById('nu-rol').value};
-  const id = await fsAdd('usuarios', data);
+  const rol  = document.getElementById('nu-rol').value;
+  const data = {nombre, email, rol};
+  const id   = await fsAdd('usuarios', data);
   cache.usuarios.push({id, ...data});
+  // Agregar al allowlist de Firestore para que las reglas lo permitan
+  try {
+    await db.collection('config').doc('allowlist').update({ [`emails.${email}`]: rol });
+  } catch(e) {
+    // Si el doc no existe aún lo creamos completo
+    const emails = {};
+    cache.usuarios.forEach(u => { if(u.email) emails[u.email.toLowerCase().trim()] = u.rol||'user'; });
+    await db.collection('config').doc('allowlist').set({ emails });
+  }
   auditLog('NUEVO USUARIO', `${nombre} (${email})`);
   renderUsers(); closeM('m-user'); toast('Usuario agregado','ok');
   ['nu-nombre','nu-email'].forEach(i=>document.getElementById(i).value='');
@@ -1779,6 +1805,14 @@ window.eliminarUser = async function(id) {
   const u = cache.usuarios.find(x=>x.id===id);
   await fsDel('usuarios', id);
   cache.usuarios = cache.usuarios.filter(x=>x.id!==id);
+  // Quitar del allowlist de Firestore
+  if(u?.email) {
+    try {
+      await db.collection('config').doc('allowlist').update({
+        [`emails.${u.email.toLowerCase().trim()}`]: firebase.firestore.FieldValue.delete()
+      });
+    } catch(e) { console.warn('No se pudo actualizar allowlist:', e); }
+  }
   await auditLog('ELIMINAR USUARIO', u?.nombre||id);
   renderUsers(); toast('Eliminado','ok');
 };
