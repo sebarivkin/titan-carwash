@@ -343,8 +343,17 @@ auth.onAuthStateChanged(async (firebaseUser) => {
   try {
     if(cache.usuarios.length === 0) await loadAllFromFirebase();
   } catch(e) {
+    // PERMISSION_DENIED = cuenta de Google no autorizada en Firestore Rules
+    if(e.code === 'permission-denied' || (e.message||'').toLowerCase().includes('permission')) {
+      await auth.signOut();
+      document.getElementById('loading-screen').style.display = 'none';
+      document.getElementById('login-screen').style.display   = 'flex';
+      document.getElementById('login-err').style.display      = 'block';
+      return;
+    }
+    // Otro error real (sin conexión, etc.)
     console.error('Error cargando datos de Firebase:', e);
-    document.querySelector('.loading-txt').textContent = 'Error al conectar con Firebase: ' + e.message;
+    document.querySelector('.loading-txt').textContent = 'Error al conectar. Verificá tu conexión a internet.';
     return;
   }
 
