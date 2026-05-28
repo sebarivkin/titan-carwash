@@ -1938,30 +1938,84 @@ function renderStock() {
         const dt = new Date(h.ts);
         const ds = fmtDL(dt.toISOString().split('T')[0])+' '+dt.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
         const esIngreso = h.delta > 0;
+        const esVenta   = h.motivo === 'venta';
+        const motLabel  = esVenta ? '<span style="color:var(--cyan);font-size:10px;">venta</span>'
+                        : h.motivo ? `<span style="color:var(--muted2);font-size:10px;">${h.motivo}</span>`
+                        : '—';
         return `<tr>
           <td style="color:var(--muted2)">${ds}</td>
           <td style="font-weight:500">${h.bebida}</td>
           <td style="color:${esIngreso?'var(--green)':'var(--red)'};font-weight:600">${esIngreso?'+':''}${h.delta}</td>
           <td>${h.stockResultante}</td>
+          <td>${motLabel}</td>
           <td style="color:var(--muted2)">${h.user||'—'}</td>
         </tr>`;
       }).join('')
-    : '<tr><td colspan="5" class="empty">Sin movimientos de stock</td></tr>';
+    : '<tr><td colspan="6" class="empty">Sin movimientos de stock</td></tr>';
 }
 
-async function registrarStockHist(bebida, delta, stockResultante) {
-  const entry = {ts:new Date().toISOString(), bebida, delta, stockResultante, user:cu.nombre};
+async function registrarStockHist(bebida, delta, stockResultante, motivo) {
+  const entry = {ts:new Date().toISOString(), bebida, delta, stockResultante, user:cu.nombre, ...(motivo ? {motivo} : {})};
   const id = await fsAdd('stockHist', entry);
   cache.stockHist.push({id, ...entry});
 }
 
-window.agregarStock2 = async function() {
+// ─── DIRECCIÓN DEL MOVIMIENTO DE STOCK ──────────────────────────
+let _stockDir = 'add'; // 'add' | 'sub'
+window.setStockDir = function(dir) {
+  _stockDir = dir;
+  const btnAdd  = document.getElementById('stock-dir-add');
+  const btnSub  = document.getElementById('stock-dir-sub');
+  const motivoW = document.getElementById('stock-motivo-wrap');
+  const alertaW = document.getElementById('stock-alerta-wrap');
+  const btnMov  = document.getElementById('btn-stock-mov');
+  if(dir === 'add') {
+    btnAdd.className  = 'btn bp'; btnAdd.style.fontSize='12px'; btnAdd.style.padding='5px 14px';
+    btnSub.className  = 'btn bs'; btnSub.style.fontSize='12px'; btnSub.style.padding='5px 14px';
+    motivoW.style.display = 'none';
+    alertaW.style.display = '';
+    btnMov.textContent = 'Agregar stock';
+    btnMov.className   = 'btn bp';
+  } else {
+    btnSub.className  = 'btn br'; btnSub.style.fontSize='12px'; btnSub.style.padding='5px 14px'; btnSub.style.border='1px solid rgba(224,85,85,.4)';
+    btnAdd.className  = 'btn bs'; btnAdd.style.fontSize='12px'; btnAdd.style.padding='5px 14px';
+    motivoW.style.display = '';
+    alertaW.style.display = 'none';
+    btnMov.textContent = 'Descontar stock';
+    btnMov.className   = 'btn br';
+    btnMov.style.border='1px solid rgba(224,85,85,.4)';
+  }
+};
+
+window.moverStock = async function() {
   const bebId  = document.getElementById('stock-beb2').value;
   const cant   = Number(document.getElementById('stock-cant2').value);
   const alerta = Number(document.getElementById('stock-alerta2').value);
-  if(!bebId||!cant) { toast('Seleccioná bebida y cantidad','err'); return; }
+  if(!bebId || !cant || cant <= 0) { toast('Seleccioná bebida y una cantidad válida','err'); return; }
   const beb = cache.bebidas.find(b=>b.id===bebId);
   if(!beb) return;
+
+  if(_stockDir === 'sub') {
+    // DESCUENTO — sin registrar como venta
+    const motivo = document.getElementById('stock-motivo').value;
+    const actual = beb.stock||0;
+    if(cant > actual) { toast(`No hay suficiente stock (quedan ${actual})`, 'err'); return; }
+    const nuevoStock = actual - cant;
+    const btn = document.getElementById('btn-stock-mov');
+    btn.disabled = true;
+    try {
+      await fsSet('bebidas', bebId, { stock: nuevoStock });
+      beb.stock = nuevoStock;
+      await registrarStockHist(beb.nombre, -cant, nuevoStock, motivo);
+      auditLog('STOCK −', `${beb.nombre} −${cant} → ${nuevoStock} (${motivo})`);
+      renderStock(); renderBebcfg(); renderDashboard();
+      toast(`${beb.nombre}: −${cant} → stock: ${nuevoStock}`, 'warn');
+      document.getElementById('stock-cant2').value = '';
+    } finally { btn.disabled = false; }
+    return;
+  }
+
+  // ALTA — comportamiento original
   const nuevoStock = (beb.stock||0) + cant;
   const update = {stock: nuevoStock};
   if(alerta) update.alertaMin = alerta;

@@ -478,15 +478,30 @@
   <!-- Cards de bebidas -->
   <div id="stock-cards-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:1.25rem;"></div>
 
-  <!-- Agregar stock -->
+  <!-- Movimiento de stock -->
   <div class="card">
-    <div class="card-hdr"><span class="card-title">Agregar stock</span></div>
+    <div class="card-hdr">
+      <span class="card-title">Movimiento de stock</span>
+      <div style="display:flex;gap:6px;">
+        <button id="stock-dir-add" class="btn bp" style="font-size:12px;padding:5px 14px;" onclick="setStockDir('add')">➕ Agregar</button>
+        <button id="stock-dir-sub" class="btn bs" style="font-size:12px;padding:5px 14px;" onclick="setStockDir('sub')">➖ Descontar</button>
+      </div>
+    </div>
     <div class="card-body">
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
         <div class="fg" style="margin:0;min-width:160px;"><label class="lbl">Bebida</label><select id="stock-beb2" style="font-size:13px;padding:8px 10px;"></select></div>
-        <div class="fg" style="margin:0;min-width:120px;"><label class="lbl">Cantidad</label><input type="number" id="stock-cant2" placeholder="Ej: 24" min="1"></div>
-        <div class="fg" style="margin:0;min-width:130px;"><label class="lbl">Alerta cuando quede menos de</label><input type="number" id="stock-alerta2" placeholder="Ej: 5" min="1"></div>
-        <button class="btn bp" onclick="agregarStock2()" style="align-self:flex-end;">Agregar stock</button>
+        <div class="fg" style="margin:0;min-width:110px;"><label class="lbl">Cantidad</label><input type="number" id="stock-cant2" placeholder="Ej: 6" min="1"></div>
+        <div class="fg" id="stock-motivo-wrap" style="margin:0;min-width:180px;display:none;"><label class="lbl">Motivo</label>
+          <select id="stock-motivo">
+            <option value="Regalo / cortesía">Regalo / cortesía</option>
+            <option value="Rotura o pérdida">Rotura o pérdida</option>
+            <option value="Error de conteo">Error de conteo</option>
+            <option value="Consumo interno">Consumo interno</option>
+            <option value="Otro">Otro</option>
+          </select>
+        </div>
+        <div class="fg" id="stock-alerta-wrap" style="margin:0;min-width:130px;"><label class="lbl">Alerta cuando quede menos de</label><input type="number" id="stock-alerta2" placeholder="Ej: 5" min="1"></div>
+        <button class="btn bp" id="btn-stock-mov" onclick="moverStock()" style="align-self:flex-end;">Agregar stock</button>
       </div>
     </div>
   </div>
@@ -495,7 +510,7 @@
   <div class="card">
     <div class="card-hdr"><span class="card-title">Historial de stock</span></div>
     <div class="tw"><table>
-      <thead><tr><th>Fecha/Hora</th><th>Bebida</th><th>Movimiento</th><th>Stock resultante</th><th>Usuario</th></tr></thead>
+      <thead><tr><th>Fecha/Hora</th><th>Bebida</th><th>Movimiento</th><th>Stock resultante</th><th>Motivo</th><th>Usuario</th></tr></thead>
       <tbody id="tbody-stock-hist"></tbody>
     </table></div>
   </div>
