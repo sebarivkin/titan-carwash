@@ -1263,10 +1263,21 @@ function _filtrarHistorial() {
 }
 
 function renderHistorial() {
-  const lavs  = _filtrarHistorial();
-  const total = lavs.reduce((s,l)=>s+l.precio,0);
-  const f1    = document.getElementById('hist-f1')?.value || hoy();
-  const f2    = document.getElementById('hist-f2')?.value || hoy();
+  const lavs    = _filtrarHistorial();
+  const total   = lavs.reduce((s,l)=>s+l.precio,0);
+  const efect   = lavs.filter(l=>l.pago==='Efectivo').reduce((s,l)=>s+l.precio,0);
+  const transf  = lavs.filter(l=>l.pago==='Transferencia').reduce((s,l)=>s+l.precio,0);
+  const debito  = lavs.filter(l=>l.pago==='Débito').reduce((s,l)=>s+l.precio,0);
+  const credito = lavs.filter(l=>l.pago==='Crédito').reduce((s,l)=>s+l.precio,0);
+
+  // Construir resumen de pagos (solo mostrar métodos con monto > 0)
+  const resumenPagos = [
+    efect   > 0 ? `💵 Efectivo: <strong style="color:var(--green)">${fmt(efect)}</strong>`     : '',
+    transf  > 0 ? `💳 Transf.: <strong style="color:var(--cyan)">${fmt(transf)}</strong>`      : '',
+    debito  > 0 ? `💳 Débito: <strong style="color:var(--cyan)">${fmt(debito)}</strong>`        : '',
+    credito > 0 ? `💳 Crédito: <strong style="color:var(--amber)">${fmt(credito)}</strong>`    : '',
+  ].filter(Boolean).join('<span style="color:var(--border2);margin:0 6px">|</span>');
+
   document.getElementById('tbody-reg').innerHTML = lavs.length
     ? lavs.map(l=>`<tr>
         <td style="color:var(--muted);white-space:nowrap">${fmtD(l.fecha)}</td>
@@ -1279,7 +1290,8 @@ function renderHistorial() {
         <td><button class="btn br" onclick="eliminarLavado('${l.id}','${l.fecha}',${l.precio},'${sanitize(l.servicio)}','${sanitize(l.patente||'')}')">✕</button></td>
       </tr>`).join('') +
       `<tr class="total-row">
-        <td colspan="5" style="color:var(--muted)">Total — ${lavs.length} registro${lavs.length!==1?'s':''}</td>
+        <td colspan="4" style="color:var(--muted);font-size:11px;">${resumenPagos}</td>
+        <td style="color:var(--muted)">Total (${lavs.length})</td>
         <td style="color:var(--green)">${fmt(total)}</td>
         <td colspan="2"></td>
       </tr>`
