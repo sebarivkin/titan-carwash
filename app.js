@@ -1597,13 +1597,30 @@ function renderEmpleados() {
   const dias  = diasEnRango(f1,f2);
   const hoyS  = hoy();
 
+  // Verificar si esta semana ya fue pagada (mismo criterio que dashboard)
+  const semanaPagada = (cache.semanasPagadas||[]).some(sp=>sp.f1===f1&&sp.f2===f2);
+
   document.getElementById('emp-grid').innerHTML = cache.empleados.map(e => {
     // Solo adelantos pendientes dentro del período seleccionado (igual que cerrarSemana)
     const adlSem   = cache.adelantos.filter(a=>a.empId===e.id&&!a.pagado&&a.fecha>=f1&&a.fecha<=f2);
     const totalAdl = adlSem.reduce((s,a)=>s+a.monto,0);
     const diasTrab = dias.filter(d=>(cache.asistencia[d]||[]).includes(e.id));
     const bruto    = diasTrab.length * e.jornal;
-    const neto     = Math.max(0, bruto - totalAdl);
+
+    // Descontar lo ya pagado en semanasPagadas (mismo cálculo que dashboard)
+    const semanasVistas = new Set();
+    const yaPagado = (cache.semanasPagadas||[])
+      .filter(sp=>sp.f1>=f1&&sp.f2<=f2)
+      .sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''))
+      .reduce((s,sp)=>{
+        const key = sp.f1+'|'+sp.f2;
+        if(semanasVistas.has(key)) return s;
+        semanasVistas.add(key);
+        const ep = (sp.empleados||[]).find(x=>x.empId===e.id);
+        return s + (ep ? (ep.bruto ?? ep.neto) : 0);
+      }, 0);
+
+    const neto = bruto - totalAdl - yaPagado;
 
     const diaButtons = dias.map(d => {
       const worked  = (cache.asistencia[d]||[]).includes(e.id);
@@ -1615,11 +1632,14 @@ function renderEmpleados() {
         onclick="toggleDia('${e.id}','${d}')">${dayNum}<br><span style="font-size:8px">${label}</span></button>`;
     }).join('');
 
-    return `<div class="ecard">
-      <div class="ecard-hdr">
+    return `<div class="ecard" style="${yaPagado>0?'border-color:rgba(46,204,138,.3)':''}">
+      <div class="ecard-hdr" style="${yaPagado>0?'background:rgba(46,204,138,.06)':''}">
         <div class="eav" style="background:${e.color}22;color:${e.color}">${e.nombre.charAt(0)}</div>
-        <div><div style="font-size:14px;font-weight:600;">${e.nombre}</div>
-          <div style="font-size:11px;color:var(--muted)">${fmt(e.jornal)}/día</div></div>
+        <div>
+          <div style="font-size:14px;font-weight:600;">${e.nombre}</div>
+          <div style="font-size:11px;color:var(--muted)">${fmt(e.jornal)}/día</div>
+        </div>
+        ${yaPagado>0?'<span style="font-size:10px;font-weight:700;color:var(--green);margin-left:auto;">✓ PAGADO</span>':''}
       </div>
       <div class="ecard-body">
         <div class="erow"><span style="color:var(--muted);font-size:11px;">Asistencia</span></div>
@@ -1630,9 +1650,11 @@ function renderEmpleados() {
           <div class="erow"><span style="color:var(--muted)">Adelantos</span><span style="color:var(--red)">${totalAdl>0?'− '+fmt(totalAdl):'—'}</span></div>
         </div>
       </div>
-      <div class="ecard-foot">
-        <span style="font-size:11px;color:var(--muted)">A cobrar</span>
-        <span style="font-size:18px;font-weight:700;color:var(--amber)">${fmt(neto)}</span>
+      <div class="ecard-foot" style="${neto===0||yaPagado>0?'background:rgba(46,204,138,.08);':''}">
+        <span style="font-size:11px;color:var(--muted)">${yaPagado>0?'Semana pagada':'A cobrar'}</span>
+        <span style="font-size:18px;font-weight:700;color:${neto>0?'var(--amber)':neto===0?'var(--green)':'var(--red)'}">
+          ${neto>0?fmt(neto):neto===0?'✓ $0':'− '+fmt(Math.abs(neto))}
+        </span>
       </div>
     </div>`;
   }).join('');
