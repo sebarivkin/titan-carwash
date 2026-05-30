@@ -180,7 +180,7 @@ function auditLog(accion, detalle) {
 // ─── CACHE LOCAL (localStorage) ────────────────────────────────
 const LS_KEY = 'titan_cache_v2';
 const LS_TS  = 'titan_cache_ts';
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutos
+const CACHE_TTL = 90 * 1000; // 90 segundos — reduce datos stale entre sesiones
 
 function saveLocalCache() {
   try {
@@ -245,6 +245,24 @@ async function loadAllFromFirebase() {
 
   // Solo hacer seed si no hay servicios cargados (primera vez real)
   if(cache.servicios.length === 0) await seedDB();
+}
+
+// Refresca solo las colecciones que cambian en tiempo real entre sesiones
+async function refreshCritical() {
+  try {
+    const [sp, adl, asist, caja] = await Promise.all([
+      db.collection('semanasPagadas').get(),
+      db.collection('adelantos').get(),
+      db.collection('asistencia').get(),
+      db.collection('caja').get(),
+    ]);
+    cache.semanasPagadas = sp.docs.map(d=>({id:d.id,...d.data()}));
+    cache.adelantos      = adl.docs.map(d=>({id:d.id,...d.data()}));
+    cache.caja           = caja.docs.map(d=>({id:d.id,...d.data()}));
+    cache.asistencia = {};
+    asist.docs.forEach(d=>{ cache.asistencia[d.id] = d.data().empleados||[]; });
+    saveLocalCache();
+  } catch(e) { console.warn('refreshCritical error:', e); }
 }
 
 async function refreshFromFirebase() {
@@ -429,10 +447,18 @@ window.go = function(id, btn) {
   document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
   document.getElementById('s-'+id).classList.add('active');
   btn.classList.add('active');
-  if(id==='dashboard') renderDashboard();
+  if(id==='dashboard') {
+    renderDashboard();
+    // Siempre refrescar datos en tiempo real al entrar al dashboard
+    refreshCritical().then(()=>{ if(cu) renderDashboard(); });
+  }
   if(id==='registrar') { renderQGrid(); renderHistorial(); }
   if(id==='caja')      renderCaja();
-  if(id==='empleados') renderEmpleados();
+  if(id==='empleados') {
+    renderEmpleados(); // render inmediato con lo que hay
+    // Luego refresca las colecciones críticas desde Firestore
+    refreshCritical().then(()=>{ if(cu) renderEmpleados(); });
+  }
   if(id==='stock')     renderStock();
   if(id==='auditoria') renderAudit();
   if(id==='costos')    renderCostosFijos();
