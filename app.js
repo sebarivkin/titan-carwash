@@ -90,11 +90,12 @@ const BEBIDA_BRAND = {
 };
 
 function getBrand(nombre) {
-  const key = nombre.toLowerCase().trim();
+  const safe = (nombre || '').toString();
+  const key  = safe.toLowerCase().trim();
   for(const [k, v] of Object.entries(BEBIDA_BRAND)) {
-    if(key.includes(k)) return v;
+    if(key && key.includes(k)) return v;
   }
-  return {bg:'#444', text:'#fff', inicial: nombre.charAt(0).toUpperCase(), borde:'#333'};
+  return {bg:'#444', text:'#fff', inicial: (safe.charAt(0) || '?').toUpperCase(), borde:'#333'};
 }
 
 function bebidaIcon(nombre, size=36) {
@@ -463,7 +464,11 @@ window.go = function(id, btn) {
   if(id==='auditoria') renderAudit();
   if(id==='costos')    renderCostosFijos();
   if(id==='recibos')   renderRecibos();
-  if(id==='config')    { renderUsers(); renderSrvcfg(); renderBebcfg(); renderEmpcfg(); cargarSaldoEnConfig(); }
+  if(id==='config')    {
+    // Cada render aislado: si uno falla, los demás igual se ejecutan
+    [renderUsers, renderSrvcfg, renderBebcfg, renderEmpcfg, cargarSaldoEnConfig]
+      .forEach(fn=>{ try { fn(); } catch(e){ console.error('Error en', fn.name, e); } });
+  }
 };
 
 function renderAll() {
@@ -1122,7 +1127,7 @@ function renderQGrid() {
   </div>`;
   document.getElementById('qgrid-lav').innerHTML = html;
 
-  document.getElementById('qgrid-beb').innerHTML = cache.bebidas.map(b => `
+  document.getElementById('qgrid-beb').innerHTML = cache.bebidas.filter(b=>b.nombre&&b.precio!=null).map(b => `
     <div class="qbtn" id="q-${b.id}" onclick="selBtn('${b.id}','beb')">
       <div style="margin-bottom:4px">${bebidaIcon(b.nombre, 36)}</div>
       <div class="qname">${b.nombre}</div>
@@ -1920,7 +1925,7 @@ window.eliminarSrv = async function(id) {
 };
 
 function fillStockSelects() {
-  const opts = cache.bebidas.map(b=>`<option value="${b.id}">${b.nombre} (stock: ${b.stock||0})</option>`).join('');
+  const opts = cache.bebidas.filter(b=>b.nombre&&b.precio!=null).map(b=>`<option value="${b.id}">${b.nombre} (stock: ${b.stock||0})</option>`).join('');
   ['stock-beb','stock-beb2'].forEach(id=>{ const el=document.getElementById(id); if(el) el.innerHTML=opts; });
 }
 
@@ -1928,11 +1933,21 @@ function fillStockSelect() { fillStockSelects(); }
 
 function renderBebcfg() {
   document.getElementById('cfg-beb').innerHTML = cache.bebidas.map(b=>{
+    // Bebida con datos dañados (sin nombre o sin precio) — ofrecer recuperación
+    if(!b.nombre || b.precio === undefined || b.precio === null) {
+      return `<div class="srv-cfg-card" style="border-color:var(--red)">
+        <div style="font-size:11px;color:var(--red);font-weight:700;margin-bottom:6px">⚠️ Datos incompletos</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Stock: <strong>${b.stock||0}</strong></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn bp" style="font-size:11px;padding:5px 10px" onclick="recuperarBeb('${b.id}')">Recuperar</button>
+          <button class="btn br" onclick="eliminarBeb('${b.id}')">Eliminar</button>
+        </div>
+      </div>`;
+    }
     const stockBajo = b.alertaMin && (b.stock||0) < b.alertaMin;
-    const brand = getBrand(b.nombre);
     return `<div class="srv-cfg-card" style="${stockBajo?'border-color:var(--amber)':''}">
       <div style="margin-bottom:8px">${bebidaIcon(b.nombre, 40)}</div>
-      <div style="font-size:12px;font-weight:600;margin-bottom:3px">${b.nombre}</div>
+      <div style="font-size:12px;font-weight:600;margin-bottom:3px">${sanitize(b.nombre)}</div>
       <div style="font-size:15px;color:var(--cyan);font-weight:700">${fmt(b.precio)}</div>
       <div style="font-size:11px;margin-top:4px;color:${stockBajo?'var(--amber)':'var(--muted)'}">
         Stock: <strong>${b.stock||0}</strong>${b.alertaMin?` (alerta: ${b.alertaMin})`:''}
@@ -1943,6 +1958,23 @@ function renderBebcfg() {
   }).join('');
   fillStockSelects();
 }
+
+window.recuperarBeb = async function(id) {
+  if(!requireAdmin()) return;
+  const beb = cache.bebidas.find(b=>b.id===id);
+  if(!beb) return;
+  const nombre = prompt('Nombre de la bebida:', beb.nombre||'');
+  if(!nombre) return;
+  const precioStr = prompt('Precio ($):', beb.precio||'');
+  const precio = Number(precioStr);
+  if(!precio || precio<=0) { toast('Precio inválido','err'); return; }
+  const alertaMin = beb.alertaMin || 6;
+  await fsUpdate('bebidas', id, {nombre:nombre.trim(), precio, alertaMin, stock: beb.stock||0});
+  beb.nombre = nombre.trim(); beb.precio = precio; beb.alertaMin = alertaMin;
+  auditLog('RECUPERAR BEBIDA', `${nombre} — ${fmt(precio)}`);
+  renderBebcfg(); renderQGrid(); renderStock();
+  toast(`Bebida recuperada: ${nombre}`,'ok');
+};
 
 window.crearBebida = async function() {
   if(!requireAdmin()) return;
@@ -1999,8 +2031,8 @@ function renderStock() {
       </div>`).join('')
     : '<div style="background:rgba(46,204,138,.08);border:1px solid rgba(46,204,138,.2);border-radius:10px;padding:10px 14px;font-size:13px;color:var(--green);margin-bottom:6px;">✓ Todos los stocks están OK</div>';
 
-  // Cards de bebidas
-  document.getElementById('stock-cards-grid').innerHTML = cache.bebidas.map(b => {
+  // Cards de bebidas (excluir las dañadas — se recuperan desde Config)
+  document.getElementById('stock-cards-grid').innerHTML = cache.bebidas.filter(b=>b.nombre&&b.precio!=null).map(b => {
     const stock     = b.stock || 0;
     const alertaMin = b.alertaMin || 0;
     const pct       = alertaMin > 0 ? Math.min(100, Math.round(stock / Math.max(alertaMin*3, stock, 1) * 100)) : Math.min(100, stock*10);
@@ -2107,7 +2139,7 @@ window.moverStock = async function() {
     const btn = document.getElementById('btn-stock-mov');
     btn.disabled = true;
     try {
-      await fsSet('bebidas', bebId, { stock: nuevoStock });
+      await fsUpdate('bebidas', bebId, { stock: nuevoStock });
       beb.stock = nuevoStock;
       await registrarStockHist(beb.nombre, -cant, nuevoStock, motivo);
       auditLog('STOCK −', `${beb.nombre} −${cant} → ${nuevoStock} (${motivo})`);
