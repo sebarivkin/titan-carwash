@@ -941,28 +941,40 @@ window.verDetalleDia = function(fecha) {
   const cajaOp   = cache.caja.filter(c=>c.cat!=='Saldo inicial'&&c.fecha===fecha);
   const ingrLav  = cajaOp.filter(c=>c.cat==='Lavado').reduce((s,c)=>s+c.monto,0);
   const ingrBeb  = cajaOp.filter(c=>c.cat==='Bebidas').reduce((s,c)=>s+c.monto,0);
+  // Otros ingresos: alquileres (cocheras, galpón, local) y demás — viven en caja, no en lavados
+  const otrosIngr = cajaOp.filter(c=>c.tipo==='ingreso'&&c.cat!=='Lavado'&&c.cat!=='Bebidas');
+  const ingrOtros = otrosIngr.reduce((s,c)=>s+c.monto,0);
   const egresos  = cajaOp.filter(c=>c.tipo==='egreso');
   const egrCaja  = egresos.reduce((s,c)=>s+c.monto,0);
   // Jornal devengado ese día (virtual — no está en caja a menos que se haya cerrado semana)
   const jDia = cache.empleados.reduce((s,e)=>
     s + ((cache.asistencia[fecha]||[]).includes(e.id) ? e.jornal : 0), 0);
-  const totalIngr = ingrLav + ingrBeb;
+  const totalIngr = ingrLav + ingrBeb + ingrOtros;
   const totalEgr  = egrCaja + jDia;
 
   document.getElementById('dash-dia-titulo').textContent = `Detalle del ${fmtDL(fecha)}`;
   document.getElementById('dash-dia-card').style.display = '';
   document.getElementById('dash-dia-card').scrollIntoView({behavior:'smooth', block:'start'});
 
-  // Tabla ingresos
-  document.getElementById('dash-dia-tbody').innerHTML = lavsDia.length
-    ? lavsDia.map(l=>`<tr>
-        <td>${l.hora||'—'}</td>
-        <td><span class="badge bc">${l.servicio}</span></td>
-        <td style="color:var(--muted)">${l.cat}</td>
-        <td>${l.patente?`<span class="badge ba">${l.patente}</span>`:'—'}</td>
-        <td>${l.pago}</td>
-        <td style="color:var(--green);font-weight:700">${fmt(l.precio)}</td>
-      </tr>`).join('')
+  // Tabla ingresos: lavados/bebidas (de cache.lavados) + otros ingresos de caja (alquileres, etc.)
+  const filasIngr = lavsDia.map(l=>`<tr>
+    <td>${l.hora||'—'}</td>
+    <td><span class="badge bc">${l.servicio}</span></td>
+    <td style="color:var(--muted)">${l.cat}</td>
+    <td>${l.patente?`<span class="badge ba">${l.patente}</span>`:'—'}</td>
+    <td>${l.pago}</td>
+    <td style="color:var(--green);font-weight:700">${fmt(l.precio)}</td>
+  </tr>`);
+  otrosIngr.forEach(c=>filasIngr.push(`<tr>
+    <td>—</td>
+    <td><span class="badge bg_">${c.cat}</span></td>
+    <td style="color:var(--muted)">${c.desc||'—'}</td>
+    <td>—</td>
+    <td>${c.pago||'—'}</td>
+    <td style="color:var(--green);font-weight:700">${fmt(c.monto)}</td>
+  </tr>`));
+  document.getElementById('dash-dia-tbody').innerHTML = filasIngr.length
+    ? filasIngr.join('')
       + `<tr class="total-row">
           <td colspan="5" style="color:var(--muted)">Total ingresos</td>
           <td style="color:var(--green)">${fmt(totalIngr)}</td>
@@ -1003,6 +1015,7 @@ window.verDetalleDia = function(fecha) {
   document.getElementById('dash-dia-resumen').innerHTML = `
     <div style="font-size:12px;color:var(--muted)">Lavados: <strong style="color:var(--cyan)">${lavsDia.filter(l=>l.cat!=='Bebida').length}</strong></div>
     <div style="font-size:12px;color:var(--muted)">Bebidas: <strong style="color:var(--cyan)">${lavsDia.filter(l=>l.cat==='Bebida').length}</strong></div>
+    ${ingrOtros>0?`<div style="font-size:12px;color:var(--muted)">Otros ingr.: <strong style="color:var(--green)">${fmt(ingrOtros)}</strong></div>`:''}
     <div style="font-size:12px;color:var(--muted)">Total ingresos: <strong style="color:var(--green)">${fmt(totalIngr)}</strong></div>
     <div style="font-size:12px;color:var(--muted)">Total egresos: <strong style="color:var(--red)">${fmt(totalEgr)}</strong></div>
     <div style="font-size:13px;font-weight:700;color:${resultado>=0?'var(--green)':'var(--red)'}">Resultado: ${fmt(resultado)}</div>
