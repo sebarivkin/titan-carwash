@@ -1548,18 +1548,13 @@ function renderFlujoDiario() {
     return;
   }
 
-  // Jornales = pago semanal de sueldos (se abona los sábados). Se excluye de
-  // este flujo operativo para no distorsionar la vista diaria. Los adelantos
-  // SÍ cuentan: son salidas de caja reales en el día que se otorgan.
+  // Jornales = pago semanal de sueldos (se abona los sábados). Se excluye SOLO
+  // de la columna de egresos (vista operativa diaria), pero NO del saldo: el
+  // saldo inicio/fin refleja la CAJA REAL, con todos los movimientos incluidos.
   const esJornal = c => c.cat === 'Sueldos';
 
-  // Movimientos que afectan este flujo: todos los ingresos + egresos sin jornales
-  const afectaFlujo = c => c.tipo === 'ingreso' || !esJornal(c);
-
-  // Precalcular saldo acumulado hasta cada fecha (eficiente: una sola pasada)
-  const allMov = cajaOp.filter(afectaFlujo).slice().sort((a,b)=>(a.fecha||'').localeCompare(b.fecha||''));
-
-  // Función: saldo acumulado ANTES de la fecha dada (operativo, sin jornales)
+  // Saldo acumulado real ANTES de la fecha dada (TODOS los movimientos)
+  const allMov = cajaOp.slice().sort((a,b)=>(a.fecha||'').localeCompare(b.fecha||''));
   function saldoAntesDe(fecha) {
     return saldoBase + allMov
       .filter(c=>c.fecha<fecha)
@@ -1571,10 +1566,12 @@ function renderFlujoDiario() {
     const cajaDia = cajaOp.filter(c=>c.fecha===fecha);
     // Ingresos: ABSOLUTAMENTE todos (lavados, bebidas, alquileres/cocheras, otros)
     const ingrDia  = cajaDia.filter(c=>c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
-    // Egresos: todos menos los jornales (sueldos del sábado)
+    // Egresos mostrados: todos menos los jornales (sueldos del sábado)
     const egrDia   = cajaDia.filter(c=>c.tipo==='egreso'&&!esJornal(c)).reduce((s,c)=>s+c.monto,0);
+    // Saldo real: usa TODOS los egresos (incluidos sueldos) para no inflarse
+    const egrDiaReal = cajaDia.filter(c=>c.tipo==='egreso').reduce((s,c)=>s+c.monto,0);
     const saldoIni = saldoAntesDe(fecha);
-    const saldoFin = saldoIni + ingrDia - egrDia;
+    const saldoFin = saldoIni + ingrDia - egrDiaReal;
     tIngresos+=ingrDia; tEgresos+=egrDia;
     return `<tr onclick="verDetalleDia('${fecha}')" style="cursor:pointer;" title="Ver detalle">
       <td><span style="color:var(--cyan);font-weight:500">${fmtDL(fecha)}</span></td>
@@ -1586,12 +1583,11 @@ function renderFlujoDiario() {
   });
 
   // Fila de totales
+  // Saldo final real al cierre del último día (con TODOS los egresos incluidos)
   const ultimoDia = diasActivos[diasActivos.length-1];
-  const saldoFinal = saldoAntesDe(ultimoDia);
-  const cajaDiaFinal = cajaOp.filter(c=>c.fecha===ultimoDia);
-  const ingrFinal = cajaDiaFinal.filter(c=>c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
-  const egrFinal  = cajaDiaFinal.filter(c=>c.tipo==='egreso'&&!esJornal(c)).reduce((s,c)=>s+c.monto,0);
-  const saldoFinTotal = saldoFinal + ingrFinal - egrFinal;
+  const saldoFinTotal = saldoBase + allMov
+    .filter(c=>c.fecha<=ultimoDia)
+    .reduce((s,c)=>s+(c.tipo==='ingreso'?c.monto:-c.monto),0);
 
   tbody.innerHTML = filas.join('') + `
     <tr class="total-row">
