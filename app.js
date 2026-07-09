@@ -818,7 +818,6 @@ function renderDashboard() {
     <div class="stat" style="border-color:var(--cyan)"><div class="slbl">Lavados totales</div><div class="sval c">${soloLavados.length}</div><div style="font-size:10px;color:var(--muted2);margin-top:3px">desde el 16/03</div></div>
     <div class="stat"><div class="slbl">Lavados semana</div><div class="sval c">${lavS}</div></div>
     <div class="stat"><div class="slbl">Ingr. semana</div><div class="sval g">${fmt(ingrS)}</div></div>
-    <div class="stat"><div class="slbl">Egr. operativo sem.</div><div class="sval r">${fmt(egrSOper)}</div></div>
     <div class="stat"><div class="slbl">Util. operativa sem.</div><div class="sval ${ingrS-egrSOper>=0?'g':'r'}">${fmt(ingrS-egrSOper)}</div></div>
     <div class="stat"><div class="slbl">Ingr. mes</div><div class="sval g">${fmt(ingrM)}</div></div>
     <div class="stat"><div class="slbl">Util. operativa mes</div><div class="sval ${ingrM-egrMOper>=0?'g':'r'}">${fmt(ingrM-egrMOper)}</div></div>
@@ -893,6 +892,28 @@ function renderDashboard() {
       <div class="bc-lbl">${DIAS_S[new Date(d+'T12:00').getDay()]}${lav7[i]>0?'<br>'+lav7[i]:''}</div>
     </div>`;
   }).join('');
+
+  // Gráfico utilidad operativa últimos 7 días
+  const util7 = dias7.map(d => {
+    const ingrDia = cajaOp.filter(c=>c.fecha===d&&c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
+    const egrDia  = cajaOp.filter(c=>c.fecha===d&&c.tipo==='egreso'&&esOper(c)).reduce((s,c)=>s+c.monto,0);
+    return ingrDia - egrDia;
+  });
+  const maxUtil7 = Math.max(...util7.map(Math.abs), 1);
+  const utilChartEl = document.getElementById('dash-util-chart');
+  if(utilChartEl) {
+    utilChartEl.innerHTML = dias7.map((d,i) => {
+      const v = util7[i];
+      const hh = Math.max(3, Math.round((Math.abs(v)/maxUtil7)*90));
+      const col = v >= 0 ? 'var(--green)' : 'var(--red)';
+      const lbl = v !== 0 ? (v>0?'+':'-')+'$'+(Math.abs(v)/1000).toFixed(0)+'k' : '';
+      return `<div class="bc-col" onclick="verDetalleDia('${d}')" style="cursor:pointer;" title="${fmtDL(d)}: ${fmt(v)}">
+        <div class="bc-val" style="color:${col}">${lbl}</div>
+        <div class="bc-bar ${i===6?'hoy':''}" style="height:${hh}px;background:${col};opacity:${i===6?1:.75};"></div>
+        <div class="bc-lbl">${DIAS_S[new Date(d+'T12:00').getDay()]}</div>
+      </div>`;
+    }).join('');
+  }
 
   // Gráfico días de la semana
   const dowEl = document.getElementById('dash-dow-chart');
@@ -1277,7 +1298,7 @@ function _filtrarHistorial() {
   let lavs = cache.lavados.filter(l=>l.fecha>=f1&&l.fecha<=f2);
   if(tipo==='lavado') lavs = lavs.filter(l=>l.cat!=='Bebida');
   if(tipo==='bebida') lavs = lavs.filter(l=>l.cat==='Bebida');
-  return lavs.sort((a,b)=>a.fecha.localeCompare(b.fecha)||((a.hora||'').localeCompare(b.hora||'')));
+  return lavs.sort((a,b)=>b.fecha.localeCompare(a.fecha)||((b.hora||'').localeCompare(a.hora||'')));
 }
 
 function renderHistorial() {
@@ -1288,13 +1309,28 @@ function renderHistorial() {
   const debito  = lavs.filter(l=>l.pago==='Débito').reduce((s,l)=>s+l.precio,0);
   const credito = lavs.filter(l=>l.pago==='Crédito').reduce((s,l)=>s+l.precio,0);
 
-  // Construir resumen de pagos (solo mostrar métodos con monto > 0)
   const resumenPagos = [
     efect   > 0 ? `💵 Efectivo: <strong style="color:var(--green)">${fmt(efect)}</strong>`     : '',
     transf  > 0 ? `💳 Transf.: <strong style="color:var(--cyan)">${fmt(transf)}</strong>`      : '',
     debito  > 0 ? `💳 Débito: <strong style="color:var(--cyan)">${fmt(debito)}</strong>`        : '',
     credito > 0 ? `💳 Crédito: <strong style="color:var(--amber)">${fmt(credito)}</strong>`    : '',
   ].filter(Boolean).join('<span style="color:var(--border2);margin:0 6px">|</span>');
+
+  // Resumen agrupado por servicio+precio
+  const grupos = {};
+  lavs.forEach(l => {
+    const k = `${l.servicio}||${l.precio}`;
+    if(!grupos[k]) grupos[k] = {servicio: l.servicio, precio: l.precio, cat: l.cat, count: 0};
+    grupos[k].count++;
+  });
+  const resumenSrv = Object.values(grupos)
+    .sort((a,b)=>b.count-a.count)
+    .map(g=>`<span style="display:inline-flex;align-items:center;gap:5px;background:var(--dark3);border:1px solid var(--border);border-radius:8px;padding:4px 10px;font-size:12px;">
+      <span class="badge ${g.cat==='Bebida'?'ba':'bc'}" style="font-size:10px;">${sanitize(g.servicio)}</span>
+      <strong style="color:var(--white)">${g.count}</strong>
+      <span style="color:var(--muted)">×</span>
+      <span style="color:var(--green);font-weight:600">${fmt(g.precio)}</span>
+    </span>`).join('');
 
   document.getElementById('tbody-reg').innerHTML = lavs.length
     ? lavs.map(l=>`<tr>
@@ -1314,6 +1350,13 @@ function renderHistorial() {
         <td colspan="2"></td>
       </tr>`
     : '<tr><td colspan="8" class="empty">Sin registros para este período</td></tr>';
+
+  // Resumen por servicio debajo de la tabla
+  const srvEl = document.getElementById('hist-resumen-srv');
+  if(srvEl) srvEl.innerHTML = lavs.length && Object.keys(grupos).length > 1
+    ? `<div style="font-size:11px;color:var(--muted);font-weight:600;margin-bottom:6px;letter-spacing:.3px;">RESUMEN POR SERVICIO</div>
+       <div style="display:flex;flex-wrap:wrap;gap:6px;">${resumenSrv}</div>`
+    : '';
 }
 
 window.setRangoHistorial = function(rango) {

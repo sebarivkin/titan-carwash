@@ -201,6 +201,12 @@
     <div class="card-body"><div class="barchart" id="dash-chart"></div></div>
   </div>
 
+  <!-- 5b. Utilidad operativa 7 días -->
+  <div class="card" style="margin-bottom:1.25rem;">
+    <div class="card-hdr"><span class="card-title">Utilidad operativa últimos 7 días</span><span style="font-size:10px;color:var(--muted)">ingresos − egresos operativos · clic para detalle</span></div>
+    <div class="card-body"><div class="barchart" id="dash-util-chart"></div></div>
+  </div>
+
   <!-- 6. Días de la semana -->
   <div class="card" style="margin-bottom:1.25rem;">
     <div class="card-hdr"><span class="card-title">Promedio de autos por día de semana</span><span id="mejor-dia-badge" style="font-size:11px;color:var(--cyan);font-weight:600;"></span></div>
@@ -302,6 +308,7 @@
       </div></div>
     <div class="tw"><table><thead><tr><th>Fecha</th><th>Hora</th><th>Servicio</th><th>Patente</th><th>Pago</th><th>Precio</th><th>Operador</th><th></th></tr></thead>
     <tbody id="tbody-reg"></tbody></table></div>
+    <div id="hist-resumen-srv" style="padding:10px 14px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px;"></div>
   </div>
 </div>
 
