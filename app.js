@@ -893,13 +893,14 @@ function renderDashboard() {
     </div>`;
   }).join('');
 
-  // Gráfico utilidad operativa últimos 7 días
-  // Egresos = gastos reales de caja (operativos) + jornal devengado por asistencia
+  // Gráfico utilidad operativa últimos 7 días — mismo criterio que "Resumen por día"
+  // Ingresos = lavados + bebidas; Egresos = jornal devengado (asistencia)
   const util7 = dias7.map(d => {
-    const ingrDia  = cajaOp.filter(c=>c.fecha===d&&c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
-    const egrCaja  = cajaOp.filter(c=>c.fecha===d&&c.tipo==='egreso'&&esOper(c)).reduce((s,c)=>s+c.monto,0);
-    const egrJorn  = cache.empleados.reduce((s,e)=>s+((cache.asistencia[d]||[]).includes(e.id)?e.jornal:0),0);
-    return ingrDia - egrCaja - egrJorn;
+    const cDia    = cajaOp.filter(c=>c.fecha===d);
+    const ingrLav = cDia.filter(c=>c.cat==='Lavado').reduce((s,c)=>s+c.monto,0);
+    const ingrBeb = cDia.filter(c=>c.cat==='Bebidas').reduce((s,c)=>s+c.monto,0);
+    const jDia    = cache.empleados.reduce((s,e)=>s+((cache.asistencia[d]||[]).includes(e.id)?e.jornal:0),0);
+    return ingrLav + ingrBeb - jDia;
   });
   const maxUtil7 = Math.max(...util7.map(Math.abs), 1);
   const utilChartEl = document.getElementById('dash-util-chart');
