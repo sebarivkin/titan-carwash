@@ -944,14 +944,21 @@ function renderDashboard() {
     if(badgeEl) badgeEl.textContent = aperXDow.some(v=>v>0) ? `⭐ Mejor: ${NOM_DIA[mejorDow]} (${promXDow[mejorDow]} autos/día)` : '';
   }
 
-  // Promedio mensual de lavados — con exclusión de días de semana ("qué pasaría si")
+  // Promedio mensual de lavados — filtrable por rango de fecha y por día de semana
   const promMesEl = document.getElementById('dash-prom-mes');
   if(promMesEl) {
+    // Rango de fecha (default: desde el primer día abierto hasta hoy = todo)
+    const savedPF1 = document.getElementById('prom-f1')?.value;
+    const savedPF2 = document.getElementById('prom-f2')?.value;
+    const pf1 = savedPF1 || diasAbiertos[0] || h;
+    const pf2 = savedPF2 || h;
+    const enRango = d => d >= pf1 && d <= pf2;
+
     const incl = i => !_dowExcl.has(i);
-    // Autos en días incluidos (reutiliza lavXDow ya indexado por día de semana)
-    const carsIncl = lavXDow.reduce((s,t,i)=> s + (incl(i) ? t : 0), 0);
-    // Días abiertos incluidos y meses distintos entre ellos
-    const diasInclList = diasAbiertos.filter(d => incl(new Date(d+'T12:00').getDay()));
+    const dowDe = d => new Date(d+'T12:00').getDay();
+    // Autos y días abiertos dentro del rango y en días de semana incluidos
+    const carsIncl     = soloLavados.filter(l=>enRango(l.fecha) && incl(dowDe(l.fecha))).length;
+    const diasInclList = diasAbiertos.filter(d=>enRango(d) && incl(dowDe(d)));
     const mesesIncl    = new Set(diasInclList.map(d=>d.slice(0,7))).size;
     const promMes = mesesIncl ? Math.round(carsIncl / mesesIncl) : 0;
     const promDia = diasInclList.length ? (carsIncl / diasInclList.length).toFixed(1) : '0';
@@ -964,6 +971,11 @@ function renderDashboard() {
     }).join('');
 
     promMesEl.innerHTML = `
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+        <input type="date" id="prom-f1" value="${pf1}" oninput="renderDashboard()" style="font-size:12px;padding:5px 8px;width:135px;">
+        <span style="color:var(--muted);font-size:12px;">→</span>
+        <input type="date" id="prom-f2" value="${pf2}" oninput="renderDashboard()" style="font-size:12px;padding:5px 8px;width:135px;">
+      </div>
       <div class="qdate" style="margin-bottom:14px;">${chips}</div>
       <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;">
         <div class="sval c" style="font-size:34px;">≈ ${promMes}</div>
