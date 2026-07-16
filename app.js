@@ -132,6 +132,8 @@ const semFin = () => {
 let cu = null;           // current user object
 let selSrv = null;       // selected service for confirm
 let regTab = 'lavados';  // active tab in registrar
+// Días de la semana excluidos del promedio mensual (análisis "qué pasaría si")
+let _dowExcl = new Set(JSON.parse(localStorage.getItem('titan_dow_excl') || '[]'));
 
 // Cache local (se actualiza con onSnapshot)
 let cache = {
@@ -942,6 +944,37 @@ function renderDashboard() {
     if(badgeEl) badgeEl.textContent = aperXDow.some(v=>v>0) ? `⭐ Mejor: ${NOM_DIA[mejorDow]} (${promXDow[mejorDow]} autos/día)` : '';
   }
 
+  // Promedio mensual de lavados — con exclusión de días de semana ("qué pasaría si")
+  const promMesEl = document.getElementById('dash-prom-mes');
+  if(promMesEl) {
+    const incl = i => !_dowExcl.has(i);
+    // Autos en días incluidos (reutiliza lavXDow ya indexado por día de semana)
+    const carsIncl = lavXDow.reduce((s,t,i)=> s + (incl(i) ? t : 0), 0);
+    // Días abiertos incluidos y meses distintos entre ellos
+    const diasInclList = diasAbiertos.filter(d => incl(new Date(d+'T12:00').getDay()));
+    const mesesIncl    = new Set(diasInclList.map(d=>d.slice(0,7))).size;
+    const promMes = mesesIncl ? Math.round(carsIncl / mesesIncl) : 0;
+    const promDia = diasInclList.length ? (carsIncl / diasInclList.length).toFixed(1) : '0';
+    const hayExcl = _dowExcl.size > 0;
+
+    const chips = NOM_DIA.map((nom,i)=>{
+      const on = incl(i);
+      return `<button class="qd ${on?'on':''}" onclick="toggleDowExcl(${i})"
+        style="${on?'':'text-decoration:line-through;opacity:.55;'}">${nom}</button>`;
+    }).join('');
+
+    promMesEl.innerHTML = `
+      <div class="qdate" style="margin-bottom:14px;">${chips}</div>
+      <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;">
+        <div class="sval c" style="font-size:34px;">≈ ${promMes}</div>
+        <div style="font-size:13px;color:var(--muted);font-weight:600;">autos / mes</div>
+        ${hayExcl?`<span class="badge ba" style="align-self:center;">excluyendo ${[..._dowExcl].map(i=>NOM_DIA[i]).join(', ')}</span>`:''}
+      </div>
+      <div style="font-size:11px;color:var(--muted2);margin-top:6px;font-variant-numeric:tabular-nums;">
+        ${promDia} autos/día · ${mesesIncl} ${mesesIncl===1?'mes':'meses'} · ${diasInclList.length} días considerados
+      </div>`;
+  }
+
   // Últimos movimientos
   const movs = [...cajaOp].sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||'')||0).slice(0,8);
   document.getElementById('dash-mov').innerHTML = movs.length
@@ -1048,6 +1081,13 @@ window.verDetalleDia = function(fecha) {
 
 window.cerrarDetalleDia = function() {
   document.getElementById('dash-dia-card').style.display = 'none';
+};
+
+// Toggle de exclusión de un día de semana en el promedio mensual
+window.toggleDowExcl = function(i) {
+  if(_dowExcl.has(i)) _dowExcl.delete(i); else _dowExcl.add(i);
+  localStorage.setItem('titan_dow_excl', JSON.stringify([..._dowExcl]));
+  renderDashboard();
 };
 
 function renderResumenDias() {
