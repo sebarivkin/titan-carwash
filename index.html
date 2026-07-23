@@ -636,11 +636,25 @@
   <div class="card" style="margin-bottom:1.25rem;">
     <div class="card-hdr"><span class="card-title">Detalle mensual</span></div>
     <div class="tw"><table>
-      <thead><tr>
-        <th>Mes</th><th>Lavados</th><th>Ingr. total</th>
-        <th>Sueldos pag.</th><th>Costos fijos</th><th>Otros egresos</th>
-        <th>Resultado actual</th><th>Proyectado 2027</th>
-      </tr></thead>
+      <thead>
+        <tr style="border-bottom:none;">
+          <th rowspan="2" style="vertical-align:bottom;">Mes</th>
+          <th rowspan="2" style="vertical-align:bottom;">Lav.</th>
+          <th colspan="3" style="text-align:center;color:var(--green);border-bottom:1px solid var(--green);padding-bottom:3px;">INGRESOS</th>
+          <th colspan="4" style="text-align:center;color:var(--red);border-bottom:1px solid var(--red);padding-bottom:3px;">EGRESOS</th>
+          <th rowspan="2" style="vertical-align:bottom;">Resultado</th>
+          <th rowspan="2" style="vertical-align:bottom;">Proy. 2027</th>
+        </tr>
+        <tr>
+          <th style="color:var(--green);opacity:.85">Lavados</th>
+          <th style="color:var(--green);opacity:.85">Bebidas</th>
+          <th style="color:var(--green);opacity:.85">Alquileres</th>
+          <th style="color:var(--red);opacity:.85">Sueldos</th>
+          <th style="color:var(--red);opacity:.85">Costos fijos</th>
+          <th style="color:var(--red);opacity:.85">Insumos/Serv.</th>
+          <th style="color:var(--red);opacity:.85">Imp./Otros</th>
+        </tr>
+      </thead>
       <tbody id="af-tbody"></tbody>
     </table></div>
   </div>

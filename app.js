@@ -2661,26 +2661,38 @@ async function renderAnalisisFinanciero() {
   soloLavados.forEach(l => { if(l.fecha) mesesSet.add(l.fecha.slice(0,7)); });
   const meses = [...mesesSet].sort();
 
-  const CATS_OTROS = ['Insumos','Servicios','Impuestos','Otro egreso'];
-
   const filas = meses.map(mes => {
     const cajaM = cajaOp.filter(c => c.fecha && c.fecha.slice(0,7) === mes);
     const lavM  = soloLavados.filter(l => l.fecha && l.fecha.slice(0,7) === mes).length;
-    const ingrTotal      = cajaM.filter(c=>c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
-    const sueldosPagados = cajaM.filter(c=>c.tipo==='egreso'&&(c.cat==='Sueldos'||c.cat==='Adelanto empleado')).reduce((s,c)=>s+c.monto,0);
-    const costosFijosM   = cajaM.filter(c=>c.tipo==='egreso'&&c.cat==='Costos fijos').reduce((s,c)=>s+c.monto,0);
-    const otrosEgr       = cajaM.filter(c=>c.tipo==='egreso'&&CATS_OTROS.includes(c.cat)).reduce((s,c)=>s+c.monto,0);
-    const resultActual   = ingrTotal - sueldosPagados - costosFijosM - otrosEgr;
-    const resultProyect  = resultActual - delta;
-    return { mes, lavM, ingrTotal, sueldosPagados, costosFijosM, otrosEgr, resultActual, resultProyect };
+    // Desglose ingresos
+    const ingrLav   = cajaM.filter(c=>c.tipo==='ingreso'&&c.cat==='Lavado').reduce((s,c)=>s+c.monto,0);
+    const ingrBeb   = cajaM.filter(c=>c.tipo==='ingreso'&&c.cat==='Bebidas').reduce((s,c)=>s+c.monto,0);
+    const ingrAlq   = cajaM.filter(c=>c.tipo==='ingreso'&&c.cat==='Otro ingreso').reduce((s,c)=>s+c.monto,0);
+    const ingrTotal = ingrLav + ingrBeb + ingrAlq;
+    // Desglose egresos
+    const egrSueldos  = cajaM.filter(c=>c.tipo==='egreso'&&(c.cat==='Sueldos'||c.cat==='Adelanto empleado')).reduce((s,c)=>s+c.monto,0);
+    const egrCF       = cajaM.filter(c=>c.tipo==='egreso'&&c.cat==='Costos fijos').reduce((s,c)=>s+c.monto,0);
+    const egrInsSer   = cajaM.filter(c=>c.tipo==='egreso'&&(c.cat==='Insumos'||c.cat==='Servicios')).reduce((s,c)=>s+c.monto,0);
+    const egrImpOtro  = cajaM.filter(c=>c.tipo==='egreso'&&(c.cat==='Impuestos'||c.cat==='Otro egreso')).reduce((s,c)=>s+c.monto,0);
+    const egrTotal    = egrSueldos + egrCF + egrInsSer + egrImpOtro;
+    const resultActual  = ingrTotal - egrTotal;
+    const resultProyect = resultActual - delta;
+    return { mes, lavM, ingrLav, ingrBeb, ingrAlq, ingrTotal,
+             egrSueldos, egrCF, egrInsSer, egrImpOtro, egrTotal,
+             resultActual, resultProyect };
   });
 
   const nMeses = Math.max(filas.length, 1);
   const avg = key => Math.round(filas.reduce((s,f)=>s+f[key],0) / nMeses);
+  const avgIngrLav   = avg('ingrLav');
+  const avgIngrBeb   = avg('ingrBeb');
+  const avgIngrAlq   = avg('ingrAlq');
   const avgIngr      = avg('ingrTotal');
-  const avgSueldos   = avg('sueldosPagados');
-  const avgCF        = avg('costosFijosM');
-  const avgOtros     = avg('otrosEgr');
+  const avgSueldos   = avg('egrSueldos');
+  const avgCF        = avg('egrCF');
+  const avgInsSer    = avg('egrInsSer');
+  const avgImpOtro   = avg('egrImpOtro');
+  const avgEgr       = avg('egrTotal');
   const avgResult    = avg('resultActual');
   const avgResult27  = avg('resultProyect');
 
@@ -2698,25 +2710,39 @@ async function renderAnalisisFinanciero() {
   const diasPorMes  = mesesConAct.length > 0 ? Math.round(diasConAct.length/mesesConAct.length) : 26;
 
   const avgAutosMes   = Math.round(soloLavados.length / nMeses);
-  const costoOper2027 = avgSueldos + avgCF + avgOtros + delta;
+  const costoOper2027 = avgSueldos + avgCF + avgInsSer + avgImpOtro + delta;
   const autosNecMes27 = ticketProm > 0 ? Math.ceil(costoOper2027 / ticketProm) : 0;
   const autosNecDia27 = Math.ceil(autosNecMes27 / Math.max(diasPorMes, 1));
   const margenAutos   = avgAutosMes - autosNecMes27;
 
   // ── KPI cards ────────────────────────────────────────────────
+  const secHdr = (txt, col) =>
+    `<div style="grid-column:1/-1;font-size:10px;font-weight:700;letter-spacing:.5px;
+      color:${col};border-bottom:1px solid ${col};padding-bottom:4px;margin-top:4px;opacity:.85">${txt}</div>`;
+
   const kpiEl = document.getElementById('af-kpi');
   if(kpiEl) kpiEl.innerHTML = `
-    <div class="stat"><div class="slbl">Ingr. prom./mes</div><div class="sval g">${fmt(avgIngr)}</div><div style="font-size:10px;color:var(--muted2);margin-top:2px">${nMeses} meses con datos</div></div>
-    <div class="stat"><div class="slbl">Sueldos prom./mes</div><div class="sval r">${fmt(avgSueldos)}</div></div>
-    <div class="stat"><div class="slbl">Costos fijos prom./mes</div><div class="sval r">${fmt(avgCF)}</div></div>
-    <div class="stat"><div class="slbl">Otros egresos prom./mes</div><div class="sval r">${fmt(avgOtros)}</div></div>
+    ${secHdr('INGRESOS PROMEDIO / MES','var(--green)')}
+    <div class="stat"><div class="slbl">Lavados</div><div class="sval g">${fmt(avgIngrLav)}</div><div style="font-size:10px;color:var(--muted2);margin-top:2px">${nMeses} meses con datos</div></div>
+    <div class="stat"><div class="slbl">Bebidas</div><div class="sval g">${fmt(avgIngrBeb)}</div></div>
+    <div class="stat"><div class="slbl">Alquileres y cocheras</div><div class="sval g">${fmt(avgIngrAlq)}</div></div>
+    <div class="stat" style="border-color:var(--green)"><div class="slbl">Total ingresos</div><div class="sval g" style="font-size:16px">${fmt(avgIngr)}</div></div>
+
+    ${secHdr('EGRESOS PROMEDIO / MES','var(--red)')}
+    <div class="stat"><div class="slbl">Sueldos</div><div class="sval r">${fmt(avgSueldos)}</div></div>
+    <div class="stat"><div class="slbl">Costos fijos</div><div class="sval r">${fmt(avgCF)}</div></div>
+    <div class="stat"><div class="slbl">Insumos y servicios</div><div class="sval r">${fmt(avgInsSer)}</div></div>
+    <div class="stat"><div class="slbl">Impuestos y otros</div><div class="sval r">${fmt(avgImpOtro)}</div></div>
+    <div class="stat" style="border-color:var(--red)"><div class="slbl">Total egresos</div><div class="sval r" style="font-size:16px">${fmt(avgEgr)}</div></div>
+
+    ${secHdr('RESULTADO','var(--cyan)')}
     <div class="stat" style="border-color:${avgResult>=0?'var(--green)':'var(--red)'}">
       <div class="slbl">Resultado actual prom./mes</div>
-      <div class="sval ${avgResult>=0?'g':'r'}">${fmt(avgResult)}</div>
+      <div class="sval ${avgResult>=0?'g':'r'}" style="font-size:18px">${fmt(avgResult)}</div>
     </div>
     <div class="stat" style="border-color:${avgResult27>=0?'var(--green)':'var(--red)'}">
       <div class="slbl">Proyectado 2027 prom./mes</div>
-      <div class="sval ${avgResult27>=0?'g':'r'}">${fmt(avgResult27)}</div>
+      <div class="sval ${avgResult27>=0?'g':'r'}" style="font-size:18px">${fmt(avgResult27)}</div>
       <div style="font-size:10px;color:var(--muted2);margin-top:2px">con alquiler propiedad</div>
     </div>
     <div class="stat"><div class="slbl">Ticket prom. lavado</div><div class="sval c">${fmt(ticketProm)}</div></div>
@@ -2727,38 +2753,44 @@ async function renderAnalisisFinanciero() {
   const MESES_NOM = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
   const tbodyEl = document.getElementById('af-tbody');
   if(tbodyEl) {
-    let totIngr=0,totSueld=0,totCF=0,totOtros=0,totRes=0,totRes27=0,totLav=0;
+    let tLav=0,tIL=0,tIB=0,tIA=0,tIT=0,tES=0,tECF=0,tEIS=0,tEIO=0,tET=0,tR=0,tR27=0;
     const filasHTML = filas.map(f => {
-      totIngr+=f.ingrTotal; totSueld+=f.sueldosPagados; totCF+=f.costosFijosM;
-      totOtros+=f.otrosEgr; totRes+=f.resultActual; totRes27+=f.resultProyect; totLav+=f.lavM;
+      tLav+=f.lavM; tIL+=f.ingrLav; tIB+=f.ingrBeb; tIA+=f.ingrAlq; tIT+=f.ingrTotal;
+      tES+=f.egrSueldos; tECF+=f.egrCF; tEIS+=f.egrInsSer; tEIO+=f.egrImpOtro; tET+=f.egrTotal;
+      tR+=f.resultActual; tR27+=f.resultProyect;
       const [anio,mes] = f.mes.split('-');
       const mesNom = `${MESES_NOM[Number(mes)-1]} ${anio}`;
+      const g = 'color:var(--green)', r = 'color:var(--red)';
       const rc  = f.resultActual  >= 0 ? 'var(--green)' : 'var(--red)';
       const rc2 = f.resultProyect >= 0 ? 'var(--green)' : 'var(--red)';
+      const v = (n, c) => n > 0 ? `<td style="${c}">${fmt(n)}</td>` : `<td style="color:var(--muted2)">—</td>`;
       return `<tr>
         <td style="font-weight:500;white-space:nowrap">${mesNom}</td>
-        <td style="text-align:center">${f.lavM}</td>
-        <td style="color:var(--green);font-weight:600">${fmt(f.ingrTotal)}</td>
-        <td style="color:var(--red)">${f.sueldosPagados>0?fmt(f.sueldosPagados):'—'}</td>
-        <td style="color:var(--red)">${f.costosFijosM>0?fmt(f.costosFijosM):'—'}</td>
-        <td style="color:var(--red)">${f.otrosEgr>0?fmt(f.otrosEgr):'—'}</td>
+        <td style="text-align:center;color:var(--muted)">${f.lavM}</td>
+        ${v(f.ingrLav,g)} ${v(f.ingrBeb,g)} ${v(f.ingrAlq,g)}
+        ${v(f.egrSueldos,r)} ${v(f.egrCF,r)} ${v(f.egrInsSer,r)} ${v(f.egrImpOtro,r)}
         <td style="font-weight:700;color:${rc}">${fmt(f.resultActual)}</td>
         <td style="font-weight:700;color:${rc2}">${fmt(f.resultProyect)}</td>
       </tr>`;
     });
-    const avgRC  = (totRes/nMeses)>=0  ? 'var(--green)' : 'var(--red)';
-    const avgRC2 = (totRes27/nMeses)>=0 ? 'var(--green)' : 'var(--red)';
+    const n = nMeses;
+    const avgRC  = (tR/n)>=0  ? 'var(--green)' : 'var(--red)';
+    const avgRC2 = (tR27/n)>=0 ? 'var(--green)' : 'var(--red)';
+    const p = (t) => fmt(Math.round(t/n));
     filasHTML.push(`<tr class="total-row">
       <td>PROMEDIO/MES</td>
-      <td style="text-align:center">${Math.round(totLav/nMeses)}</td>
-      <td style="color:var(--green)">${fmt(Math.round(totIngr/nMeses))}</td>
-      <td style="color:var(--red)">${fmt(Math.round(totSueld/nMeses))}</td>
-      <td style="color:var(--red)">${fmt(Math.round(totCF/nMeses))}</td>
-      <td style="color:var(--red)">${fmt(Math.round(totOtros/nMeses))}</td>
-      <td style="font-weight:700;color:${avgRC};font-size:14px">${fmt(Math.round(totRes/nMeses))}</td>
-      <td style="font-weight:700;color:${avgRC2};font-size:14px">${fmt(Math.round(totRes27/nMeses))}</td>
+      <td style="text-align:center">${Math.round(tLav/n)}</td>
+      <td style="color:var(--green)">${p(tIL)}</td>
+      <td style="color:var(--green)">${p(tIB)}</td>
+      <td style="color:var(--green)">${p(tIA)}</td>
+      <td style="color:var(--red)">${p(tES)}</td>
+      <td style="color:var(--red)">${p(tECF)}</td>
+      <td style="color:var(--red)">${p(tEIS)}</td>
+      <td style="color:var(--red)">${p(tEIO)}</td>
+      <td style="font-weight:700;color:${avgRC};font-size:14px">${p(tR)}</td>
+      <td style="font-weight:700;color:${avgRC2};font-size:14px">${p(tR27)}</td>
     </tr>`);
-    tbodyEl.innerHTML = filas.length ? filasHTML.join('') : '<tr><td colspan="8" class="empty">Sin datos registrados aún.</td></tr>';
+    tbodyEl.innerHTML = filas.length ? filasHTML.join('') : '<tr><td colspan="11" class="empty">Sin datos registrados aún.</td></tr>';
   }
 
   // ── Gráfico de barras mensual ────────────────────────────────
