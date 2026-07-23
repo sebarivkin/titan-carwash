@@ -2655,10 +2655,11 @@ async function renderAnalisisFinanciero() {
   const cajaOp     = cache.caja.filter(c => c.cat !== 'Saldo inicial');
   const soloLavados = cache.lavados.filter(l => l.cat !== 'Bebida');
 
-  // Agrupar meses con actividad
+  // Agrupar meses con actividad — solo desde mayo 2026 inclusive
+  const FECHA_INICIO_AF = '2026-05';
   const mesesSet = new Set();
-  cajaOp.forEach(c => { if(c.fecha) mesesSet.add(c.fecha.slice(0,7)); });
-  soloLavados.forEach(l => { if(l.fecha) mesesSet.add(l.fecha.slice(0,7)); });
+  cajaOp.forEach(c => { if(c.fecha && c.fecha.slice(0,7) >= FECHA_INICIO_AF) mesesSet.add(c.fecha.slice(0,7)); });
+  soloLavados.forEach(l => { if(l.fecha && l.fecha.slice(0,7) >= FECHA_INICIO_AF) mesesSet.add(l.fecha.slice(0,7)); });
   const meses = [...mesesSet].sort();
 
   const filas = meses.map(mes => {
