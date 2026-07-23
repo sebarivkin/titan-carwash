@@ -443,6 +443,7 @@ function initFields() {
   const lastPlate = localStorage.getItem('titan_last_plate');
   if(lastPlate) document.getElementById('reg-patente').value = lastPlate;
   fillAdlEmp();
+  onCxTipoChange(); // inicializar categorías según tipo por defecto (ingreso)
 }
 
 // ─── NAV ───────────────────────────────────────────────────────
@@ -1449,8 +1450,18 @@ window.eliminarLavado = async function(id, fecha, precio, servicio, patente) {
 };
 
 // ─── CAJA ──────────────────────────────────────────────────────
+const CATS_INGRESO = ['Alquiler cochera','Alquiler galpón','Alquiler local','Otro ingreso'];
+const CATS_EGRESO  = ['Insumos','Servicios','Impuestos','Otro egreso','Extracción dueños'];
+
 window.onCxTipoChange = function() {
   const esEgreso = document.getElementById('cx-tipo').value === 'egreso';
+  // Actualizar categorías según tipo
+  const catSel = document.getElementById('cx-cat');
+  if(catSel) {
+    const cats = esEgreso ? CATS_EGRESO : CATS_INGRESO;
+    catSel.innerHTML = cats.map(c=>`<option>${c}</option>`).join('');
+  }
+  // Mostrar/ocultar vinculación a costo fijo (solo egresos)
   const wrap = document.getElementById('cx-cf-wrap');
   if(!wrap) return;
   wrap.style.display = esEgreso ? '' : 'none';
@@ -2668,7 +2679,7 @@ async function renderAnalisisFinanciero() {
     // Desglose ingresos
     const ingrLav   = cajaM.filter(c=>c.tipo==='ingreso'&&c.cat==='Lavado').reduce((s,c)=>s+c.monto,0);
     const ingrBeb   = cajaM.filter(c=>c.tipo==='ingreso'&&c.cat==='Bebidas').reduce((s,c)=>s+c.monto,0);
-    const ingrAlq   = cajaM.filter(c=>c.tipo==='ingreso'&&c.cat==='Otro ingreso').reduce((s,c)=>s+c.monto,0);
+    const ingrAlq   = cajaM.filter(c=>c.tipo==='ingreso'&&['Otro ingreso','Alquiler cochera','Alquiler galpón','Alquiler local'].includes(c.cat)).reduce((s,c)=>s+c.monto,0);
     const ingrTotal = ingrLav + ingrBeb + ingrAlq;
     // Desglose egresos
     const egrSueldos  = cajaM.filter(c=>c.tipo==='egreso'&&(c.cat==='Sueldos'||c.cat==='Adelanto empleado')).reduce((s,c)=>s+c.monto,0);
