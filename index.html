@@ -90,6 +90,7 @@
   <button onclick="go('stock',this)">Stock Bebidas</button>
   <button onclick="go('costos',this)">Costos Fijos</button>
   <button onclick="go('recibos',this)">Recibos</button>
+  <button onclick="go('analisis',this)">Análisis Fin.</button>
   <button onclick="go('auditoria',this)">Auditoría</button>
   <button onclick="go('config',this)" id="nav-cfg" style="display:none">Config</button>
 </nav>
@@ -591,6 +592,61 @@
     </div>
 
   </div>
+</div>
+
+<!-- ANÁLISIS FINANCIERO -->
+<div class="section" id="s-analisis">
+
+  <!-- Configuración alquiler 2027 -->
+  <div class="card" style="margin-bottom:1.25rem;">
+    <div class="card-hdr">
+      <span class="card-title">Alquiler propiedad 2027</span>
+      <button class="btn bp" style="font-size:12px;padding:6px 14px;" onclick="guardarCfgAnalisis()">Guardar</button>
+    </div>
+    <div class="card-body">
+      <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;">
+        <div class="fg" style="max-width:260px;">
+          <label class="lbl">Alquiler propiedad desde 2027 ($) <span style="color:var(--amber);font-weight:700">— exento todo 2026</span></label>
+          <input type="number" id="af-alq-prop" placeholder="800000" min="0" oninput="actualizarSubtotalesAlquiler()" style="width:100%;">
+        </div>
+      </div>
+      <div id="af-cfg-subtotales" style="display:flex;gap:12px;flex-wrap:wrap;margin-top:12px;"></div>
+    </div>
+  </div>
+
+  <!-- KPI cards -->
+  <div class="sg" id="af-kpi" style="margin-bottom:1.25rem;"></div>
+
+  <!-- Gráfico resultado mensual -->
+  <div class="card" style="margin-bottom:1.25rem;">
+    <div class="card-hdr">
+      <span class="card-title">Resultado mensual histórico</span>
+      <span style="font-size:10px;color:var(--muted)">verde = positivo · rojo = negativo · línea naranja = umbral 2027</span>
+    </div>
+    <div class="card-body" style="overflow-x:auto;">
+      <div id="af-chart" style="position:relative;min-width:480px;height:155px;display:flex;align-items:flex-end;gap:4px;padding-top:28px;"></div>
+    </div>
+  </div>
+
+  <!-- Tabla histórica mensual -->
+  <div class="card" style="margin-bottom:1.25rem;">
+    <div class="card-hdr"><span class="card-title">Detalle mensual</span></div>
+    <div class="tw"><table>
+      <thead><tr>
+        <th>Mes</th><th>Lavados</th><th>Ingr. total</th>
+        <th>Sueldos pag.</th><th>Costos fijos</th><th>Otros egresos</th>
+        <th>Resultado actual</th><th>Proyectado 2027</th>
+      </tr></thead>
+      <tbody id="af-tbody"></tbody>
+    </table></div>
+  </div>
+
+  <!-- Punto de equilibrio 2027 -->
+  <div class="card">
+    <div class="card-hdr"><span class="card-title">Punto de equilibrio 2027</span></div>
+    <div class="sg" id="af-be" style="padding:1rem;"></div>
+  </div>
+
 </div>
 
 </main>

@@ -139,7 +139,8 @@ let _dowExcl = new Set(JSON.parse(localStorage.getItem('titan_dow_excl') || '[]'
 let cache = {
   usuarios: [], empleados: [], servicios: [], bebidas: [],
   lavados: [], caja: [], adelantos: [], asistencia: {}, audit: [],
-  stockHist: [], semanasPagadas: [], costosFijos: []
+  stockHist: [], semanasPagadas: [], costosFijos: [],
+  analisis_cfg: null
 };
 
 // ─── FIRESTORE HELPERS ─────────────────────────────────────────
@@ -466,6 +467,7 @@ window.go = function(id, btn) {
   if(id==='auditoria') renderAudit();
   if(id==='costos')    renderCostosFijos();
   if(id==='recibos')   renderRecibos();
+  if(id==='analisis')  renderAnalisisFinanciero();
   if(id==='config')    {
     // Cada render aislado: si uno falla, los demás igual se ejecutan
     [renderUsers, renderSrvcfg, renderBebcfg, renderEmpcfg, cargarSaldoEnConfig]
@@ -2590,6 +2592,238 @@ window.devLogin = async function() {
   initFields();
   renderAll();
 };
+
+// ─── ANÁLISIS FINANCIERO ────────────────────────────────────────
+async function loadAnalisisCfg() {
+  if(cache.analisis_cfg !== null) return;
+  const DEFAULTS = { alquilerPropiedad: 800000 };
+  try {
+    const snap = await db.collection('config').doc('analisis').get();
+    cache.analisis_cfg = snap.exists ? { ...DEFAULTS, ...snap.data() } : { ...DEFAULTS };
+  } catch(e) {
+    console.warn('loadAnalisisCfg error:', e);
+    cache.analisis_cfg = { ...DEFAULTS };
+  }
+}
+
+function actualizarSubtotalesAlquiler() {
+  const prop = Number(document.getElementById('af-alq-prop')?.value) || 0;
+  const el   = document.getElementById('af-cfg-subtotales');
+  if(!el) return;
+  el.innerHTML = `
+    <div class="stat" style="flex:1;min-width:130px">
+      <div class="slbl">Alquiler 2026</div>
+      <div class="sval g">$0/mes</div>
+      <div style="font-size:10px;color:var(--muted2);margin-top:2px">exento todo el año</div>
+    </div>
+    <div class="stat" style="flex:1;min-width:130px;border-color:var(--red)">
+      <div class="slbl">Alquiler 2027</div>
+      <div class="sval r">${fmt(prop)}/mes</div>
+      <div style="font-size:10px;color:var(--muted2);margin-top:2px">propiedad principal</div>
+    </div>
+    <div class="stat" style="flex:1;min-width:130px;border-color:var(--amber)">
+      <div class="slbl">Impacto adicional</div>
+      <div class="sval a">+${fmt(prop)}/mes</div>
+      <div style="font-size:10px;color:var(--muted2);margin-top:2px">nuevo costo desde 2027</div>
+    </div>`;
+}
+
+window.guardarCfgAnalisis = async function() {
+  if(!requireAdmin()) return;
+  const prop = Number(document.getElementById('af-alq-prop')?.value);
+  if(!prop || prop <= 0) { toast('Ingresá un monto válido','err'); return; }
+  const data = { alquilerPropiedad: prop };
+  try {
+    await db.collection('config').doc('analisis').set(data, { merge: true });
+    cache.analisis_cfg = { ...cache.analisis_cfg, ...data };
+    await auditLog('CONFIG ANALISIS', `Alquiler 2027: ${fmt(prop)}/mes`);
+    toast('Configuración guardada ✓','ok');
+    renderAnalisisFinanciero();
+  } catch(e) { console.error(e); toast('Error al guardar','err'); }
+};
+
+async function renderAnalisisFinanciero() {
+  await loadAnalisisCfg();
+  const cfg   = cache.analisis_cfg;
+  const delta = cfg.alquilerPropiedad || 800000;
+
+  // Pre-cargar input
+  const inputProp = document.getElementById('af-alq-prop');
+  if(inputProp) inputProp.value = delta;
+  actualizarSubtotalesAlquiler();
+
+  const cajaOp     = cache.caja.filter(c => c.cat !== 'Saldo inicial');
+  const soloLavados = cache.lavados.filter(l => l.cat !== 'Bebida');
+
+  // Agrupar meses con actividad
+  const mesesSet = new Set();
+  cajaOp.forEach(c => { if(c.fecha) mesesSet.add(c.fecha.slice(0,7)); });
+  soloLavados.forEach(l => { if(l.fecha) mesesSet.add(l.fecha.slice(0,7)); });
+  const meses = [...mesesSet].sort();
+
+  const CATS_OTROS = ['Insumos','Servicios','Impuestos','Otro egreso'];
+
+  const filas = meses.map(mes => {
+    const cajaM = cajaOp.filter(c => c.fecha && c.fecha.slice(0,7) === mes);
+    const lavM  = soloLavados.filter(l => l.fecha && l.fecha.slice(0,7) === mes).length;
+    const ingrTotal      = cajaM.filter(c=>c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
+    const sueldosPagados = cajaM.filter(c=>c.tipo==='egreso'&&(c.cat==='Sueldos'||c.cat==='Adelanto empleado')).reduce((s,c)=>s+c.monto,0);
+    const costosFijosM   = cajaM.filter(c=>c.tipo==='egreso'&&c.cat==='Costos fijos').reduce((s,c)=>s+c.monto,0);
+    const otrosEgr       = cajaM.filter(c=>c.tipo==='egreso'&&CATS_OTROS.includes(c.cat)).reduce((s,c)=>s+c.monto,0);
+    const resultActual   = ingrTotal - sueldosPagados - costosFijosM - otrosEgr;
+    const resultProyect  = resultActual - delta;
+    return { mes, lavM, ingrTotal, sueldosPagados, costosFijosM, otrosEgr, resultActual, resultProyect };
+  });
+
+  const nMeses = Math.max(filas.length, 1);
+  const avg = key => Math.round(filas.reduce((s,f)=>s+f[key],0) / nMeses);
+  const avgIngr      = avg('ingrTotal');
+  const avgSueldos   = avg('sueldosPagados');
+  const avgCF        = avg('costosFijosM');
+  const avgOtros     = avg('otrosEgr');
+  const avgResult    = avg('resultActual');
+  const avgResult27  = avg('resultProyect');
+
+  // Ticket promedio
+  const lavConPrecio = soloLavados.filter(l=>l.precio>0);
+  const ingrLavTotal = cajaOp.filter(c=>c.cat==='Lavado'&&c.tipo==='ingreso').reduce((s,c)=>s+c.monto,0);
+  const ticketProm   = lavConPrecio.length > 0 ? Math.round(ingrLavTotal / lavConPrecio.length) : 0;
+
+  // Días/mes promedio
+  const diasConAct  = [...new Set([
+    ...soloLavados.map(l=>l.fecha),
+    ...Object.keys(cache.asistencia).filter(d=>(cache.asistencia[d]||[]).length>0)
+  ])].filter(Boolean);
+  const mesesConAct = [...new Set(diasConAct.map(d=>d.slice(0,7)))];
+  const diasPorMes  = mesesConAct.length > 0 ? Math.round(diasConAct.length/mesesConAct.length) : 26;
+
+  const avgAutosMes   = Math.round(soloLavados.length / nMeses);
+  const costoOper2027 = avgSueldos + avgCF + avgOtros + delta;
+  const autosNecMes27 = ticketProm > 0 ? Math.ceil(costoOper2027 / ticketProm) : 0;
+  const autosNecDia27 = Math.ceil(autosNecMes27 / Math.max(diasPorMes, 1));
+  const margenAutos   = avgAutosMes - autosNecMes27;
+
+  // ── KPI cards ────────────────────────────────────────────────
+  const kpiEl = document.getElementById('af-kpi');
+  if(kpiEl) kpiEl.innerHTML = `
+    <div class="stat"><div class="slbl">Ingr. prom./mes</div><div class="sval g">${fmt(avgIngr)}</div><div style="font-size:10px;color:var(--muted2);margin-top:2px">${nMeses} meses con datos</div></div>
+    <div class="stat"><div class="slbl">Sueldos prom./mes</div><div class="sval r">${fmt(avgSueldos)}</div></div>
+    <div class="stat"><div class="slbl">Costos fijos prom./mes</div><div class="sval r">${fmt(avgCF)}</div></div>
+    <div class="stat"><div class="slbl">Otros egresos prom./mes</div><div class="sval r">${fmt(avgOtros)}</div></div>
+    <div class="stat" style="border-color:${avgResult>=0?'var(--green)':'var(--red)'}">
+      <div class="slbl">Resultado actual prom./mes</div>
+      <div class="sval ${avgResult>=0?'g':'r'}">${fmt(avgResult)}</div>
+    </div>
+    <div class="stat" style="border-color:${avgResult27>=0?'var(--green)':'var(--red)'}">
+      <div class="slbl">Proyectado 2027 prom./mes</div>
+      <div class="sval ${avgResult27>=0?'g':'r'}">${fmt(avgResult27)}</div>
+      <div style="font-size:10px;color:var(--muted2);margin-top:2px">con alquiler propiedad</div>
+    </div>
+    <div class="stat"><div class="slbl">Ticket prom. lavado</div><div class="sval c">${fmt(ticketProm)}</div></div>
+    <div class="stat" style="border-color:var(--amber)"><div class="slbl">Autos nec./mes en 2027</div><div class="sval a">${autosNecMes27}/mes</div><div style="font-size:10px;color:var(--muted2);margin-top:2px">${autosNecDia27}/día</div></div>
+  `;
+
+  // ── Tabla histórica ──────────────────────────────────────────
+  const MESES_NOM = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const tbodyEl = document.getElementById('af-tbody');
+  if(tbodyEl) {
+    let totIngr=0,totSueld=0,totCF=0,totOtros=0,totRes=0,totRes27=0,totLav=0;
+    const filasHTML = filas.map(f => {
+      totIngr+=f.ingrTotal; totSueld+=f.sueldosPagados; totCF+=f.costosFijosM;
+      totOtros+=f.otrosEgr; totRes+=f.resultActual; totRes27+=f.resultProyect; totLav+=f.lavM;
+      const [anio,mes] = f.mes.split('-');
+      const mesNom = `${MESES_NOM[Number(mes)-1]} ${anio}`;
+      const rc  = f.resultActual  >= 0 ? 'var(--green)' : 'var(--red)';
+      const rc2 = f.resultProyect >= 0 ? 'var(--green)' : 'var(--red)';
+      return `<tr>
+        <td style="font-weight:500;white-space:nowrap">${mesNom}</td>
+        <td style="text-align:center">${f.lavM}</td>
+        <td style="color:var(--green);font-weight:600">${fmt(f.ingrTotal)}</td>
+        <td style="color:var(--red)">${f.sueldosPagados>0?fmt(f.sueldosPagados):'—'}</td>
+        <td style="color:var(--red)">${f.costosFijosM>0?fmt(f.costosFijosM):'—'}</td>
+        <td style="color:var(--red)">${f.otrosEgr>0?fmt(f.otrosEgr):'—'}</td>
+        <td style="font-weight:700;color:${rc}">${fmt(f.resultActual)}</td>
+        <td style="font-weight:700;color:${rc2}">${fmt(f.resultProyect)}</td>
+      </tr>`;
+    });
+    const avgRC  = (totRes/nMeses)>=0  ? 'var(--green)' : 'var(--red)';
+    const avgRC2 = (totRes27/nMeses)>=0 ? 'var(--green)' : 'var(--red)';
+    filasHTML.push(`<tr class="total-row">
+      <td>PROMEDIO/MES</td>
+      <td style="text-align:center">${Math.round(totLav/nMeses)}</td>
+      <td style="color:var(--green)">${fmt(Math.round(totIngr/nMeses))}</td>
+      <td style="color:var(--red)">${fmt(Math.round(totSueld/nMeses))}</td>
+      <td style="color:var(--red)">${fmt(Math.round(totCF/nMeses))}</td>
+      <td style="color:var(--red)">${fmt(Math.round(totOtros/nMeses))}</td>
+      <td style="font-weight:700;color:${avgRC};font-size:14px">${fmt(Math.round(totRes/nMeses))}</td>
+      <td style="font-weight:700;color:${avgRC2};font-size:14px">${fmt(Math.round(totRes27/nMeses))}</td>
+    </tr>`);
+    tbodyEl.innerHTML = filas.length ? filasHTML.join('') : '<tr><td colspan="8" class="empty">Sin datos registrados aún.</td></tr>';
+  }
+
+  // ── Gráfico de barras mensual ────────────────────────────────
+  const chartEl = document.getElementById('af-chart');
+  if(chartEl && filas.length > 0) {
+    const vals   = filas.map(f=>f.resultActual);
+    const maxAbs = Math.max(...vals.map(Math.abs), delta, 1);
+    const CHART_H = 110;
+    const deltaLinePx = Math.round((delta/maxAbs)*CHART_H);
+
+    const colsHTML = filas.map(f => {
+      const v   = f.resultActual;
+      const hh  = Math.max(3, Math.round((Math.abs(v)/maxAbs)*CHART_H));
+      const col = v >= 0 ? 'var(--green)' : 'var(--red)';
+      const [anio,mes] = f.mes.split('-');
+      const lbl = `${MESES_NOM[Number(mes)-1]} ${anio.slice(2)}`;
+      return `<div class="bc-col" style="flex:1;min-width:32px;" title="${lbl}: ${fmt(v)} actual / ${fmt(f.resultProyect)} en 2027">
+        <div class="bc-val" style="color:${col};font-size:8px;white-space:nowrap;">${v!==0?(v>0?'+':'')+Math.round(v/1000)+'k':''}</div>
+        <div class="bc-bar" style="height:${hh}px;background:${col};opacity:.85;"></div>
+        <div class="bc-lbl" style="font-size:8px;">${lbl}</div>
+      </div>`;
+    }).join('');
+
+    chartEl.innerHTML = `
+      <div style="position:absolute;bottom:${22+deltaLinePx}px;left:0;right:0;
+                  border-top:2px dashed var(--amber);z-index:2;pointer-events:none;">
+        <span style="font-size:9px;color:var(--amber);background:var(--dark2);
+                     padding:0 4px;position:absolute;top:-9px;right:4px;">
+          Umbral 2027 (−${fmt(delta)})
+        </span>
+      </div>
+      ${colsHTML}`;
+  }
+
+  // ── Punto de equilibrio 2027 ─────────────────────────────────
+  const beEl = document.getElementById('af-be');
+  if(beEl) {
+    const mc = margenAutos >= 0 ? 'var(--green)' : 'var(--red)';
+    beEl.innerHTML = `
+      <div class="stat"><div class="slbl">Ticket prom. lavado</div><div class="sval c">${fmt(ticketProm)}</div></div>
+      <div class="stat" style="border-color:var(--red)">
+        <div class="slbl">Costo operativo 2027/mes</div>
+        <div class="sval r">${fmt(costoOper2027)}</div>
+        <div style="font-size:10px;color:var(--muted2);margin-top:2px">sueldos + CF + otros + alquiler prop.</div>
+      </div>
+      <div class="stat" style="border-color:var(--amber)">
+        <div class="slbl">Autos necesarios 2027/mes</div>
+        <div class="sval a">${autosNecMes27}</div>
+      </div>
+      <div class="stat" style="border-color:var(--amber)">
+        <div class="slbl">Autos necesarios 2027/día</div>
+        <div class="sval a">${autosNecDia27}</div>
+        <div style="font-size:10px;color:var(--muted2);margin-top:2px">~${diasPorMes} días/mes promedio</div>
+      </div>
+      <div class="stat"><div class="slbl">Autos promedio actual/mes</div><div class="sval c">${avgAutosMes}</div></div>
+      <div class="stat" style="border-color:${mc}">
+        <div class="slbl">Margen en autos 2027</div>
+        <div class="sval ${margenAutos>=0?'g':'r'}">${margenAutos>=0?'+':''}${margenAutos}</div>
+        <div style="font-size:10px;color:var(--muted2);margin-top:2px">
+          ${margenAutos>=0?'autos de holgura sobre el punto de equilibrio':'autos que faltan para cubrir costos 2027'}
+        </div>
+      </div>
+    `;
+  }
+}
 
 // ─── ARRANCAR ──────────────────────────────────────────────────
 initApp();
