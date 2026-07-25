@@ -1495,7 +1495,8 @@ window.agregarMovExtraord = async function() {
   document.getElementById('cx-cf').value    = '';
 };
 
-let _cxTipo = ''; // '' | 'ingreso' | 'egreso'
+let _cxTipo = '';    // '' | 'ingreso' | 'egreso'
+let _cerrando = false; // guard: evita doble-click en cerrarSemana
 
 window.setTipoCaja = function(tipo) {
   _cxTipo = _cxTipo === tipo ? '' : tipo; // toggle
@@ -1847,6 +1848,12 @@ window.eliminarAdl = async function(id, empId, fecha, monto) {
 };
 
 window.cerrarSemana = async function() {
+  if(_cerrando) { toast('Procesando el pago, aguardá un momento...','warn'); return; }
+  _cerrando = true;
+  const _btnPS = document.getElementById('btn-pagar-semana');
+  if(_btnPS) { _btnPS.disabled = true; _btnPS.textContent = 'Procesando...'; }
+
+  try {
   const f1  = document.getElementById('sem-ini').value || semIni();
   const f2  = document.getElementById('sem-fin').value || semFin();
   const dias = diasEnRango(f1, f2);
@@ -1883,14 +1890,17 @@ window.cerrarSemana = async function() {
   if(!confirm(`PAGO DE SEMANA  ${fmtDL(f1)} al ${fmtDL(f2)}\n\n${lineas.join('\n')}\n\n¿Confirmar?`)) return;
 
   // ── Ejecutar pagos ────────────────────────────────────────────
-  const pagosEmpleados = [];
-  for(const {e, diasTrab, bruto, adlsPend, adelantado, neto} of datosEmp) {
-    // Marcar todos sus adelantos pendientes como pagados
-    for(const a of adlsPend) {
-      await fsUpdate('adelantos', a.id, {pagado:true});
-      const ca = cache.adelantos.find(x=>x.id===a.id);
-      if(ca) ca.pagado = true;
-    }
+  // Orden deliberado: la semana se marca como pagada ANTES de mover plata.
+  // Si algo falla a mitad de camino, un reintento choca con la guardia
+  // `yaExiste` en lugar de duplicar egresos en caja.
+  const pagosEmpleados = datosEmp.map(({e, diasTrab, bruto, adelantado, neto}) =>
+    ({empId:e.id, nombre:e.nombre, diasTrab, bruto, adelantado, neto}));
+  const semPagada = {f1, f2, total:totalCaja, fecha:hoy(), user:cu.nombre, empleados:pagosEmpleados};
+  const spId = await fsAdd('semanasPagadas', semPagada);
+  if(!cache.semanasPagadas) cache.semanasPagadas = [];
+  cache.semanasPagadas.push({id:spId, ...semPagada});
+
+  for(const {e, diasTrab, neto} of datosEmp) {
     // Solo registrar egreso en caja si hay diferencia positiva a pagar
     if(neto > 0) {
       const cm = {fecha:hoy(), tipo:'egreso', cat:'Sueldos',
@@ -1899,14 +1909,15 @@ window.cerrarSemana = async function() {
       const cmId = await fsAdd('caja', cm);
       cache.caja.push({id:cmId, ...cm});
     }
-    pagosEmpleados.push({empId:e.id, nombre:e.nombre, diasTrab, bruto, adelantado, neto});
   }
 
-  // Guardar semana pagada
-  const semPagada = {f1, f2, total:totalCaja, fecha:hoy(), user:cu.nombre, empleados:pagosEmpleados};
-  const spId = await fsAdd('semanasPagadas', semPagada);
-  if(!cache.semanasPagadas) cache.semanasPagadas = [];
-  cache.semanasPagadas.push({id:spId, ...semPagada});
+  for(const {adlsPend} of datosEmp) {
+    for(const a of adlsPend) {
+      await fsUpdate('adelantos', a.id, {pagado:true});
+      const ca = cache.adelantos.find(x=>x.id===a.id);
+      if(ca) ca.pagado = true;
+    }
+  }
 
   await auditLog('CIERRE SEMANA', `${fmtDL(f1)} al ${fmtDL(f2)} — ${fmt(totalCaja)}`);
 
@@ -1928,6 +1939,14 @@ window.cerrarSemana = async function() {
     renderEmpleados();
     toast(`Semana ${fmtDL(fmtFecha(sig))}–${fmtDL(fmtFecha(sigFin))} lista para cargar`, 'ok');
   }, 2500);
+
+  } catch(err) {
+    console.error('cerrarSemana:', err);
+    toast('⚠ Error al procesar el pago. Revisá Caja y Adelantos antes de reintentar.','err');
+  } finally {
+    _cerrando = false;
+    if(_btnPS) { _btnPS.disabled = false; _btnPS.textContent = 'Pagar semana'; }
+  }
 };
 
 // ─── AUDITORÍA ─────────────────────────────────────────────────
