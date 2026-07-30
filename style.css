@@ -151,6 +151,8 @@ tr:hover td{background:rgba(0,196,212,.03);}
 .dia-btn:hover:not(:disabled):not(.worked){border-color:var(--cyan);color:var(--text);}
 .dia-btn:active:not(:disabled){transform:scale(.9);}
 .dia-btn.worked{background:var(--cyan);border-color:var(--cyan);color:var(--dark);box-shadow:0 2px 8px rgba(0,196,212,.25);}
+/* Medio jornal: mitad rellena (p.ej. día de lluvia) */
+.dia-btn.worked.medio{background:linear-gradient(to right,var(--cyan) 50%,transparent 50%);border-color:var(--cyan);color:var(--text);box-shadow:none;}
 .dia-btn.today{border-color:var(--amber);}
 .dia-btn:disabled{opacity:.4;cursor:default;}
 

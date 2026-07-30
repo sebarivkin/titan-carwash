@@ -138,7 +138,7 @@ let _dowExcl = new Set(JSON.parse(localStorage.getItem('titan_dow_excl') || '[]'
 // Cache local (se actualiza con onSnapshot)
 let cache = {
   usuarios: [], empleados: [], servicios: [], bebidas: [],
-  lavados: [], caja: [], adelantos: [], asistencia: {}, audit: [],
+  lavados: [], caja: [], adelantos: [], asistencia: {}, asistMedio: {}, audit: [],
   stockHist: [], semanasPagadas: [], costosFijos: [],
   analisis_cfg: null
 };
@@ -244,8 +244,11 @@ async function loadAllFromFirebase() {
   cache.stockHist      = stockHist.docs.map(d=>({id:d.id,...d.data()}));
   cache.semanasPagadas = semanasPagadas.docs.map(d=>({id:d.id,...d.data()}));
   cache.costosFijos    = costosFijos.docs.map(d=>({id:d.id,...d.data()}));
-  cache.asistencia = {};
-  asistSnap.docs.forEach(d => { cache.asistencia[d.id] = d.data().empleados || []; });
+  cache.asistencia = {}; cache.asistMedio = {};
+  asistSnap.docs.forEach(d => {
+    cache.asistencia[d.id] = d.data().empleados || [];
+    cache.asistMedio[d.id] = d.data().medios || [];
+  });
 
   // Solo hacer seed si no hay servicios cargados (primera vez real)
   if(cache.servicios.length === 0) await seedDB();
@@ -263,8 +266,11 @@ async function refreshCritical() {
     cache.semanasPagadas = sp.docs.map(d=>({id:d.id,...d.data()}));
     cache.adelantos      = adl.docs.map(d=>({id:d.id,...d.data()}));
     cache.caja           = caja.docs.map(d=>({id:d.id,...d.data()}));
-    cache.asistencia = {};
-    asist.docs.forEach(d=>{ cache.asistencia[d.id] = d.data().empleados||[]; });
+    cache.asistencia = {}; cache.asistMedio = {};
+    asist.docs.forEach(d=>{
+      cache.asistencia[d.id] = d.data().empleados||[];
+      cache.asistMedio[d.id] = d.data().medios||[];
+    });
     saveLocalCache();
   } catch(e) { console.warn('refreshCritical error:', e); }
 }
@@ -483,15 +489,126 @@ function renderAll() {
   renderCostosFijos();
 }
 
+// ─── ASISTENCIA ────────────────────────────────────────────────
+// Un día puede valer 0 (ausente), 0.5 (medio jornal — p.ej. día de lluvia) o 1.
+// `asistencia[fecha]` lista quién estuvo; `asistMedio[fecha]` marca a quiénes se
+// les paga la mitad. Un id en `medios` sin estar en `empleados` se ignora.
+function factorDia(fecha, empId) {
+  if(!(cache.asistencia[fecha]||[]).includes(empId)) return 0;
+  return (cache.asistMedio?.[fecha]||[]).includes(empId) ? 0.5 : 1;
+}
+
+// Días trabajados en un rango, contando medios como 0.5
+function diasTrabajados(dias, empId) {
+  return dias.reduce((s,d)=>s+factorDia(d,empId), 0);
+}
+
+// Formato lindo para cantidades con medio día: 4.5 → "4½", 4 → "4"
+function fmtDias(n) {
+  const ent = Math.floor(n);
+  return n % 1 === 0 ? String(ent) : (ent === 0 ? '½' : `${ent}½`);
+}
+
+// Jornal devengado de todos los empleados en una fecha puntual
+function jornalDia(fecha) {
+  return cache.empleados.reduce((s,e)=>s + factorDia(fecha, e.id) * e.jornal, 0);
+}
+
 // ─── DASHBOARD ─────────────────────────────────────────────────
 function jornalDevengado(fechaDesde, fechaHasta) {
-  let total = 0;
-  cache.empleados.forEach(e => {
-    const dias = diasEnRango(fechaDesde, fechaHasta);
-    const trab = dias.filter(d=>(cache.asistencia[d]||[]).includes(e.id)).length;
-    total += trab * e.jornal;
+  const dias = diasEnRango(fechaDesde, fechaHasta);
+  return cache.empleados.reduce((total,e) =>
+    total + diasTrabajados(dias, e.id) * e.jornal, 0);
+}
+
+// Los lavados guardan `servicio` (nombre) pero no `tipo`. Lo resolvemos contra
+// el catálogo de servicios; si el servicio fue borrado o es precio personalizado,
+// caemos al nombre ("... Premium") y en última instancia a "Otro".
+function tipoDeLavado(lav) {
+  const srv = cache.servicios.find(s => s.nombre === lav.servicio);
+  if(srv && srv.tipo && srv.tipo !== '—') return srv.tipo;
+  const n = (lav.servicio||'').toLowerCase();
+  for(const t of TIPO_ORDER) {
+    if(t !== '—' && n.includes(t.toLowerCase())) return t;
+  }
+  return 'Otro';
+}
+
+const COLOR_TIPO = {
+  'Común':    '#00c4d4',
+  'Premium':  '#f0a030',
+  'Interior': '#2ecc8a',
+  'Full':     '#a678e0',
+  'Otro':     '#4a6a80',
+};
+
+// Torta (donut con conic-gradient) — cantidad y % por tipo de lavado
+function renderTiposLavado(soloLavados, semIniF, mesIniF, hoyF) {
+  const el = document.getElementById('dash-tipos');
+  if(!el) return;
+
+  const rango = document.getElementById('tipos-rango')?.value || 'todo';
+  const lavs = rango === 'sem' ? soloLavados.filter(l=>l.fecha>=semIniF&&l.fecha<=hoyF)
+             : rango === 'mes' ? soloLavados.filter(l=>l.fecha>=mesIniF&&l.fecha<=hoyF)
+             : soloLavados;
+
+  if(!lavs.length) {
+    el.innerHTML = '<div class="empty" style="padding:24px 0">Sin lavados en el período</div>';
+    return;
+  }
+
+  // Agrupar por tipo, ordenado según TIPO_ORDER (con "Otro" al final)
+  const grupos = {};
+  lavs.forEach(l => {
+    const t = tipoDeLavado(l);
+    if(!grupos[t]) grupos[t] = {cant:0, monto:0};
+    grupos[t].cant++;
+    grupos[t].monto += (l.precio||0);
   });
-  return total;
+  const orden = [...TIPO_ORDER.filter(t=>t!=='—'), 'Otro'];
+  const datos = Object.entries(grupos)
+    .map(([tipo,v]) => ({tipo, ...v, pct: v.cant/lavs.length*100}))
+    .sort((a,b)=>{
+      const ia = orden.indexOf(a.tipo), ib = orden.indexOf(b.tipo);
+      return (ia<0?99:ia) - (ib<0?99:ib);
+    });
+
+  // Tramos del conic-gradient (acumulando grados para evitar redondeos visibles)
+  let acum = 0;
+  const tramos = datos.map(d => {
+    const desde = acum;
+    acum += d.pct * 3.6;
+    return `${COLOR_TIPO[d.tipo]||COLOR_TIPO['Otro']} ${desde.toFixed(2)}deg ${acum.toFixed(2)}deg`;
+  }).join(',');
+
+  const dominante = datos.reduce((a,b)=>b.cant>a.cant?b:a);
+
+  el.innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:22px;justify-content:center;">
+      <div style="position:relative;width:150px;height:150px;flex-shrink:0;">
+        <div style="width:100%;height:100%;border-radius:50%;background:conic-gradient(${tramos});"></div>
+        <div style="position:absolute;inset:26px;border-radius:50%;background:var(--dark2);
+                    display:flex;flex-direction:column;align-items:center;justify-content:center;">
+          <div style="font-size:22px;font-weight:700;color:var(--text);line-height:1">${lavs.length}</div>
+          <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">lavados</div>
+        </div>
+      </div>
+      <div style="flex:1;min-width:230px;">
+        ${datos.map(d => `
+          <div style="display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px solid var(--border);">
+            <span style="width:11px;height:11px;border-radius:3px;flex-shrink:0;
+                         background:${COLOR_TIPO[d.tipo]||COLOR_TIPO['Otro']}"></span>
+            <span style="font-size:13px;font-weight:500;flex:1">${d.tipo}</span>
+            <span style="font-size:13px;font-weight:700;color:var(--text);min-width:38px;text-align:right">${d.cant}</span>
+            <span style="font-size:12px;color:var(--muted);min-width:48px;text-align:right">${d.pct.toFixed(1)}%</span>
+            <span style="font-size:11px;color:var(--green);min-width:78px;text-align:right">${fmt(d.monto)}</span>
+          </div>`).join('')}
+      </div>
+    </div>
+    <div style="margin-top:12px;font-size:11px;color:var(--muted);text-align:center;">
+      Más elegido: <strong style="color:${COLOR_TIPO[dominante.tipo]||COLOR_TIPO['Otro']}">${dominante.tipo}</strong>
+      — ${dominante.cant} de ${lavs.length} (${dominante.pct.toFixed(1)}%)
+    </div>`;
 }
 
 // ─── COSTOS FIJOS ──────────────────────────────────────────────
@@ -701,7 +818,7 @@ function renderDashboard() {
   // Ingresos hoy: solo lavados + bebidas (cash real del servicio)
   const ingrH = cajaOp.filter(c=>c.fecha===h&&c.tipo==='ingreso'&&(c.cat==='Lavado'||c.cat==='Bebidas')).reduce((s,c)=>s+c.monto,0);
   // Egresos hoy: jornales devengados según asistencia (costo real del día)
-  const egrHOper = cache.empleados.reduce((s,e)=>s+((cache.asistencia[h]||[]).includes(e.id)?e.jornal:0),0);
+  const egrHOper = jornalDia(h);
   // Utilidad operativa del día
   const utilHOper = ingrH - egrHOper;
 
@@ -796,7 +913,7 @@ function renderDashboard() {
   const diasEmp = diasEnRango(empF1, empF2);
   let deudaSemana = 0;
   const resEmp = cache.empleados.map(e => {
-    const diasTrab  = diasEmp.filter(d=>(cache.asistencia[d]||[]).includes(e.id)).length;
+    const diasTrab  = diasTrabajados(diasEmp, e.id);
     const bruto     = diasTrab * e.jornal;
     // Solo adelantos del período visible (mismo criterio que cerrarSemana)
     const adlPend   = cache.adelantos.filter(a=>a.empId===e.id&&!a.pagado&&a.fecha>=empF1&&a.fecha<=empF2).reduce((s,a)=>s+a.monto,0);
@@ -866,7 +983,7 @@ function renderDashboard() {
             <div style="width:20px;height:20px;border-radius:50%;background:${e.color}33;color:${e.color};font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;">${e.nombre.charAt(0)}</div>
             <span style="font-weight:500">${e.nombre}</span>
           </div></td>
-          <td style="color:var(--cyan);font-weight:600">${e.diasTrab}</td>
+          <td style="color:var(--cyan);font-weight:600">${fmtDias(e.diasTrab)}</td>
           <td>${fmt(e.bruto)}</td>
           <td style="color:var(--red)">${e.adlPend>0?'− '+fmt(e.adlPend):'—'}</td>
           <td style="color:var(--green)">${e.yaPagado>0?'− '+fmt(e.yaPagado):'—'}</td>
@@ -904,7 +1021,7 @@ function renderDashboard() {
     const cDia    = cajaOp.filter(c=>c.fecha===d);
     const ingrLav = cDia.filter(c=>c.cat==='Lavado').reduce((s,c)=>s+c.monto,0);
     const ingrBeb = cDia.filter(c=>c.cat==='Bebidas').reduce((s,c)=>s+c.monto,0);
-    const jDia    = cache.empleados.reduce((s,e)=>s+((cache.asistencia[d]||[]).includes(e.id)?e.jornal:0),0);
+    const jDia    = jornalDia(d);
     return ingrLav + ingrBeb - jDia;
   });
   const maxUtil7 = Math.max(...util7.map(Math.abs), 1);
@@ -922,6 +1039,9 @@ function renderDashboard() {
       </div>`;
     }).join('');
   }
+
+  // Gráfico torta: composición por tipo de lavado (Común / Premium / etc.)
+  renderTiposLavado(soloLavados, si, mi, h);
 
   // Gráfico días de la semana
   const dowEl = document.getElementById('dash-dow-chart');
@@ -1019,8 +1139,7 @@ window.verDetalleDia = function(fecha) {
   const egresos  = cajaOp.filter(c=>c.tipo==='egreso');
   const egrCaja  = egresos.reduce((s,c)=>s+c.monto,0);
   // Jornal devengado ese día (virtual — no está en caja a menos que se haya cerrado semana)
-  const jDia = cache.empleados.reduce((s,e)=>
-    s + ((cache.asistencia[fecha]||[]).includes(e.id) ? e.jornal : 0), 0);
+  const jDia = jornalDia(fecha);
   const totalIngr = ingrLav + ingrBeb + ingrOtros;
   const totalEgr  = egrCaja + jDia;
 
@@ -1064,7 +1183,10 @@ window.verDetalleDia = function(fecha) {
   // Jornales devengados (virtual — mostrar solo si hubo asistencia y no están ya en caja como Sueldos)
   const empConAsistencia = cache.empleados.filter(e=>(cache.asistencia[fecha]||[]).includes(e.id));
   if(empConAsistencia.length) {
-    const detJornales = empConAsistencia.map(e=>e.nombre+' '+fmt(e.jornal)).join(', ');
+    const detJornales = empConAsistencia.map(e=>{
+      const f = factorDia(fecha, e.id);
+      return e.nombre + ' ' + fmt(f * e.jornal) + (f === 0.5 ? ' (½ jornal)' : '');
+    }).join(', ');
     filasEgr.push(`<tr style="opacity:.7;">
       <td><span class="badge bw">Jornal devengado</span></td>
       <td style="color:var(--muted);font-style:italic">${detJornales}</td>
@@ -1136,8 +1258,7 @@ function renderResumenDias() {
     const cantBeb  = lavsDia.filter(l=>l.cat==='Bebida').length;
     const ingrBeb  = cDia.filter(c=>c.cat==='Bebidas').reduce((s,c)=>s+c.monto,0);
     // Jornal devengado ese día — solo días trabajados × tarifa
-    const jDia     = cache.empleados.reduce((s,e)=>
-      s + ((cache.asistencia[fecha]||[]).includes(e.id) ? e.jornal : 0), 0);
+    const jDia     = jornalDia(fecha);
     // Gastos extraordinarios (insumos, servicios, impuestos, etc.)
     const egrExtr  = cDia.filter(c=>c.tipo==='egreso'&&CATS_EXTR.includes(c.cat)).reduce((s,c)=>s+c.monto,0);
     // Utilidad operativa = ingresos - jornal devengado (sin gastos ext.)
@@ -1729,8 +1850,9 @@ function renderEmpleados() {
     // Solo adelantos pendientes dentro del período seleccionado (igual que cerrarSemana)
     const adlSem   = cache.adelantos.filter(a=>a.empId===e.id&&!a.pagado&&a.fecha>=f1&&a.fecha<=f2);
     const totalAdl = adlSem.reduce((s,a)=>s+a.monto,0);
-    const diasTrab = dias.filter(d=>(cache.asistencia[d]||[]).includes(e.id));
-    const bruto    = diasTrab.length * e.jornal;
+    const diasTrab = diasTrabajados(dias, e.id);
+    const medios   = dias.filter(d=>factorDia(d,e.id)===0.5).length;
+    const bruto    = diasTrab * e.jornal;
 
     // Descontar lo ya pagado en semanasPagadas (mismo cálculo que dashboard)
     const semanasVistas = new Set();
@@ -1747,14 +1869,17 @@ function renderEmpleados() {
 
     const neto = bruto - totalAdl - yaPagado;
 
+    // Cada botón cicla ausente → jornal completo → medio jornal → ausente
     const diaButtons = dias.map(d => {
-      const worked  = (cache.asistencia[d]||[]).includes(e.id);
+      const f       = factorDia(d, e.id);
       const isToday = d === hoyS;
       const label   = DIAS_S[new Date(d+'T12:00').getDay()];
       const dayNum  = new Date(d+'T12:00').getDate();
-      return `<button class="dia-btn${worked?' worked':''}${isToday?' today':''}"
-        title="${fmtDL(d)}"
-        onclick="toggleDia('${e.id}','${d}')">${dayNum}<br><span style="font-size:8px">${label}</span></button>`;
+      const cls     = f === 1 ? ' worked' : f === 0.5 ? ' worked medio' : '';
+      const estado  = f === 1 ? 'jornal completo' : f === 0.5 ? 'MEDIO jornal' : 'ausente';
+      return `<button class="dia-btn${cls}${isToday?' today':''}"
+        title="${fmtDL(d)} — ${estado} (tocá para cambiar)"
+        onclick="toggleDia('${e.id}','${d}')">${dayNum}<br><span style="font-size:8px">${f===0.5?'½ '+label:label}</span></button>`;
     }).join('');
 
     return `<div class="ecard" style="${yaPagado>0?'border-color:rgba(46,204,138,.3)':''}">
@@ -1767,10 +1892,13 @@ function renderEmpleados() {
         ${yaPagado>0?'<span style="font-size:10px;font-weight:700;color:var(--green);margin-left:auto;">✓ PAGADO</span>':''}
       </div>
       <div class="ecard-body">
-        <div class="erow"><span style="color:var(--muted);font-size:11px;">Asistencia</span></div>
+        <div class="erow">
+          <span style="color:var(--muted);font-size:11px;">Asistencia</span>
+          <span style="color:var(--muted2);font-size:10px;">1 toque = día · 2 = ½ jornal</span>
+        </div>
         <div class="dias-wrap">${diaButtons}</div>
         <div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;">
-          <div class="erow"><span style="color:var(--muted)">Días</span><span style="color:var(--cyan);font-weight:600">${diasTrab.length}</span></div>
+          <div class="erow"><span style="color:var(--muted)">Días</span><span style="color:var(--cyan);font-weight:600">${fmtDias(diasTrab)}${medios>0?` <span style="color:var(--amber);font-size:10px;font-weight:500">(${medios} ½)</span>`:''}</span></div>
           <div class="erow"><span style="color:var(--muted)">Bruto</span><span>${fmt(bruto)}</span></div>
           <div class="erow"><span style="color:var(--muted)">Adelantos</span><span style="color:var(--red)">${totalAdl>0?'− '+fmt(totalAdl):'—'}</span></div>
         </div>
@@ -1801,15 +1929,31 @@ function renderEmpleados() {
     : '<tr><td colspan="6" class="empty">Sin adelantos</td></tr>';
 }
 
+// Cicla el estado del día: ausente → jornal completo → medio jornal → ausente
 window.toggleDia = async function(empId, fecha) {
+  if(!cache.asistMedio) cache.asistMedio = {};
   if(!cache.asistencia[fecha]) cache.asistencia[fecha] = [];
-  const idx = cache.asistencia[fecha].indexOf(empId);
-  if(idx>=0) cache.asistencia[fecha].splice(idx,1);
-  else       cache.asistencia[fecha].push(empId);
-  await fsSet('asistencia', fecha, {empleados: cache.asistencia[fecha]});
-  const emp = cache.empleados.find(e=>e.id===empId);
-  const presente = cache.asistencia[fecha].includes(empId);
-  auditLog('ASISTENCIA', `${emp?.nombre} — ${fmtDL(fecha)} — ${presente?'presente':'ausente'}`);
+  if(!cache.asistMedio[fecha]) cache.asistMedio[fecha] = [];
+
+  const pres  = cache.asistencia[fecha];
+  const medio = cache.asistMedio[fecha];
+  const actual = factorDia(fecha, empId);
+
+  if(actual === 0) {              // ausente → completo
+    pres.push(empId);
+  } else if(actual === 1) {       // completo → medio
+    medio.push(empId);
+  } else {                        // medio → ausente
+    pres.splice(pres.indexOf(empId), 1);
+    medio.splice(medio.indexOf(empId), 1);
+  }
+
+  await fsSet('asistencia', fecha, {empleados: pres, medios: medio});
+
+  const emp    = cache.empleados.find(e=>e.id===empId);
+  const nuevo  = factorDia(fecha, empId);
+  const estado = nuevo === 1 ? 'presente' : nuevo === 0.5 ? 'medio jornal' : 'ausente';
+  auditLog('ASISTENCIA', `${emp?.nombre} — ${fmtDL(fecha)} — ${estado}`);
   renderEmpleados();
   renderDashboard(); // refleja deuda acumulada en tiempo real
 };
@@ -1867,7 +2011,7 @@ window.cerrarSemana = async function() {
 
   // ── Pre-calcular para mostrar resumen antes de confirmar ──────
   const datosEmp = cache.empleados.map(e => {
-    const diasTrab   = dias.filter(d=>(cache.asistencia[d]||[]).includes(e.id)).length;
+    const diasTrab   = diasTrabajados(dias, e.id);  // medios cuentan 0.5
     const bruto      = diasTrab * e.jornal;
     // Solo adelantos pendientes dentro del rango de la semana
     const adlsPend   = cache.adelantos.filter(a=>a.empId===e.id&&!a.pagado&&a.fecha>=f1&&a.fecha<=f2);
@@ -1884,7 +2028,7 @@ window.cerrarSemana = async function() {
   const lineas = datosEmp.map(x=>{
     const adlTxt = x.adelantado>0 ? ` − ${fmt(x.adelantado)} adelantos` : '';
     const nTxt   = x.neto>=0 ? `= ${fmt(x.neto)} a pagar` : `= ${fmt(Math.abs(x.neto))} a favor del negocio`;
-    return `• ${x.e.nombre}: ${x.diasTrab}d × ${fmt(x.e.jornal)}${adlTxt} ${nTxt}`;
+    return `• ${x.e.nombre}: ${fmtDias(x.diasTrab)}d × ${fmt(x.e.jornal)}${adlTxt} ${nTxt}`;
   });
   lineas.push(`\nTOTAL a descontar de caja: ${fmt(totalCaja)}`);
   if(!confirm(`PAGO DE SEMANA  ${fmtDL(f1)} al ${fmtDL(f2)}\n\n${lineas.join('\n')}\n\n¿Confirmar?`)) return;
@@ -1904,7 +2048,7 @@ window.cerrarSemana = async function() {
     // Solo registrar egreso en caja si hay diferencia positiva a pagar
     if(neto > 0) {
       const cm = {fecha:hoy(), tipo:'egreso', cat:'Sueldos',
-        desc:`Sueldo ${e.nombre} — ${diasTrab} días (${fmtDL(f1)} al ${fmtDL(f2)})`,
+        desc:`Sueldo ${e.nombre} — ${fmtDias(diasTrab)} días (${fmtDL(f1)} al ${fmtDL(f2)})`,
         monto:neto, pago:'Efectivo', user:cu.nombre};
       const cmId = await fsAdd('caja', cm);
       cache.caja.push({id:cmId, ...cm});

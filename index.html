@@ -208,6 +208,19 @@
     <div class="card-body"><div class="barchart" id="dash-util-chart"></div></div>
   </div>
 
+  <!-- 5c. Composición por tipo de lavado -->
+  <div class="card" style="margin-bottom:1.25rem;">
+    <div class="card-hdr">
+      <span class="card-title">Tipos de lavado</span>
+      <select id="tipos-rango" onchange="renderDashboard()" style="font-size:11px;padding:4px 8px;">
+        <option value="mes">Este mes</option>
+        <option value="sem">Esta semana</option>
+        <option value="todo" selected>Histórico</option>
+      </select>
+    </div>
+    <div class="card-body" id="dash-tipos"></div>
+  </div>
+
   <!-- 6. Días de la semana -->
   <div class="card" style="margin-bottom:1.25rem;">
     <div class="card-hdr"><span class="card-title">Promedio de autos por día de semana</span><span id="mejor-dia-badge" style="font-size:11px;color:var(--cyan);font-weight:600;"></span></div>
