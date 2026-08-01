@@ -2180,21 +2180,65 @@ function renderSrvcfg() {
       <div style="font-size:12px;font-weight:600;margin-bottom:3px">${s.nombre}</div>
       <div style="font-size:15px;color:var(--cyan);font-weight:700">${fmt(s.precio)}</div>
       <div style="font-size:10px;color:var(--muted);margin-top:2px">${s.tipo!=='—'?s.tipo:''}</div>
-      <div style="margin-top:8px"><button class="btn br" onclick="eliminarSrv('${s.id}')">Eliminar</button></div>
+      <div style="margin-top:8px;display:flex;gap:5px;justify-content:center;">
+        <button class="btn bs" onclick="editarSrv('${s.id}')" title="Editar">✏️</button>
+        <button class="btn br" onclick="eliminarSrv('${s.id}')">Eliminar</button>
+      </div>
     </div>`).join('');
 }
 
-window.crearServicio = async function() {
+// El modal m-srv sirve para crear y para editar. `_editSrvId` distingue el modo:
+// null = alta nueva, id = edición de ese servicio.
+let _editSrvId = null;
+
+window.abrirNuevoServicio = function() {
+  if(!requireAdmin()) return;
+  _editSrvId = null;
+  document.getElementById('ns-titulo').textContent = 'Nuevo servicio';
+  document.getElementById('ns-nombre').value = '';
+  document.getElementById('ns-precio').value = '';
+  document.getElementById('ns-cat').value  = 'Auto';
+  document.getElementById('ns-tipo').value = 'Común';
+  openM('m-srv');
+};
+
+window.editarSrv = function(id) {
+  if(!requireAdmin()) return;
+  const s = cache.servicios.find(x=>x.id===id);
+  if(!s) { toast('Servicio no encontrado','err'); return; }
+  _editSrvId = id;
+  document.getElementById('ns-titulo').textContent = 'Editar servicio';
+  document.getElementById('ns-nombre').value = s.nombre;
+  document.getElementById('ns-precio').value = s.precio;
+  document.getElementById('ns-cat').value  = s.cat  || 'Auto';
+  document.getElementById('ns-tipo').value = s.tipo || 'Común';
+  openM('m-srv');
+};
+
+window.guardarServicio = async function() {
   if(!requireAdmin()) return;
   const nombre = document.getElementById('ns-nombre').value.trim();
   const precio = Number(document.getElementById('ns-precio').value);
-  if(precio <= 0 || precio > 100000000) { toast('Precio inválido','err'); return; }
-  if(!nombre||!precio) { toast('Completá nombre y precio','err'); return; }
+  if(!nombre) { toast('Completá el nombre','err'); return; }
+  if(!precio || precio <= 0 || precio > 100000000) { toast('Precio inválido','err'); return; }
   const data = {nombre, precio, cat:document.getElementById('ns-cat').value, tipo:document.getElementById('ns-tipo').value};
-  const id = await fsAdd('servicios', data);
-  cache.servicios.push({id, ...data});
-  await auditLog('NUEVO SERVICIO', `${nombre} — ${fmt(precio)}`);
-  renderSrvcfg(); renderQGrid(); closeM('m-srv'); toast('Servicio guardado','ok');
+
+  if(_editSrvId) {
+    const s = cache.servicios.find(x=>x.id===_editSrvId);
+    const antes = s ? `${s.nombre} ${fmt(s.precio)}` : '—';
+    await fsUpdate('servicios', _editSrvId, data);
+    if(s) Object.assign(s, data);
+    await auditLog('EDITAR SERVICIO', `${antes} → ${nombre} ${fmt(precio)}`);
+    toast('Servicio actualizado','ok');
+  } else {
+    const id = await fsAdd('servicios', data);
+    cache.servicios.push({id, ...data});
+    await auditLog('NUEVO SERVICIO', `${nombre} — ${fmt(precio)}`);
+    toast('Servicio guardado','ok');
+  }
+
+  _editSrvId = null;
+  renderSrvcfg(); renderQGrid(); closeM('m-srv');
   ['ns-nombre','ns-precio'].forEach(i=>document.getElementById(i).value='');
 };
 

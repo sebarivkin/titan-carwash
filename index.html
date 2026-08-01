@@ -483,7 +483,7 @@
   <div class="card"><div class="card-hdr"><span class="card-title">Servicios de lavado</span>
     <div style="display:flex;gap:8px;">
       <button class="btn bs" style="font-size:12px;padding:6px 14px;" onclick="abrirAumento()">↑ Aumentar precios</button>
-      <button class="btn bp" style="font-size:12px;padding:6px 14px;" onclick="openM('m-srv')">+ Servicio</button>
+      <button class="btn bp" style="font-size:12px;padding:6px 14px;" onclick="abrirNuevoServicio()">+ Servicio</button>
     </div></div>
     <div class="card-body"><div class="srv-cfg-grid" id="cfg-srv"></div></div></div>
   <div class="card"><div class="card-hdr"><span class="card-title">Bebidas y stock</span>
@@ -700,14 +700,14 @@
 </div></div>
 
 <div class="modal-bg" id="m-srv"><div class="modal">
-  <div class="modal-title">Nuevo servicio</div>
+  <div class="modal-title" id="ns-titulo">Nuevo servicio</div>
   <div class="g2">
     <div class="fg full"><label class="lbl">Nombre</label><input type="text" id="ns-nombre" placeholder="Ej: Auto Premium"></div>
     <div class="fg"><label class="lbl">Precio ($)</label><input type="number" id="ns-precio" placeholder="0" min="0"></div>
     <div class="fg"><label class="lbl">Vehículo</label><select id="ns-cat"><option>Moto</option><option>Auto</option><option>SUV</option><option>Camioneta</option><option>Otro</option></select></div>
     <div class="fg"><label class="lbl">Tipo</label><select id="ns-tipo"><option>Común</option><option>Premium</option><option>Interior</option><option>Full</option><option>—</option></select></div>
   </div>
-  <div class="modal-actions"><button class="btn bs" onclick="closeM('m-srv')">Cancelar</button><button class="btn bp" onclick="crearServicio()">Guardar</button></div>
+  <div class="modal-actions"><button class="btn bs" onclick="closeM('m-srv')">Cancelar</button><button class="btn bp" onclick="guardarServicio()">Guardar</button></div>
 </div></div>
 
 <div class="modal-bg" id="m-aum"><div class="modal">
