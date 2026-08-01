@@ -2198,6 +2198,91 @@ window.crearServicio = async function() {
   ['ns-nombre','ns-precio'].forEach(i=>document.getElementById(i).value='');
 };
 
+// ─── AUMENTO MASIVO DE PRECIOS ─────────────────────────────────
+// Solo toca el catálogo `servicios` (precio de venta futuro). Los lavados
+// y los movimientos de caja ya registrados guardan su propio importe, así
+// que ninguna estadística ni histórico se ve alterado por esto.
+let _aumentando = false;
+
+window.abrirAumento = function() {
+  if(!requireAdmin()) return;
+  document.getElementById('aum-valor').value = '';
+  document.getElementById('aum-modo').value = 'fijo';
+  openM('m-aum');
+  previewAumento();
+};
+
+// Devuelve [{s, nuevo, delta}] para los servicios que efectivamente cambian
+function calcularAumento() {
+  const modo  = document.getElementById('aum-modo').value;
+  const valor = Number(document.getElementById('aum-valor').value);
+  const red   = Number(document.getElementById('aum-redondeo').value) || 1;
+  if(!valor || valor <= 0) return [];
+  return sortServicios(cache.servicios).map(s => {
+    const base  = modo === 'pct' ? s.precio * (1 + valor/100) : s.precio + valor;
+    const nuevo = Math.max(0, Math.round(base / red) * red);
+    return {s, nuevo, delta: nuevo - s.precio};
+  }).filter(x => x.delta !== 0);
+}
+
+window.previewAumento = function() {
+  const el   = document.getElementById('aum-preview');
+  const btn  = document.getElementById('btn-aplicar-aum');
+  const camb = calcularAumento();
+  if(!camb.length) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--muted);text-align:center;padding:14px 0">Ingresá un valor para ver la vista previa</div>';
+    if(btn) btn.disabled = true;
+    return;
+  }
+  if(btn) btn.disabled = false;
+  el.innerHTML = camb.map(({s, nuevo, delta}) => `
+    <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px;">
+      <span style="flex:1">${sanitize(s.nombre)}</span>
+      <span style="color:var(--muted);text-decoration:line-through">${fmt(s.precio)}</span>
+      <span style="color:var(--muted2)">→</span>
+      <span style="color:var(--green);font-weight:700;min-width:72px;text-align:right">${fmt(nuevo)}</span>
+      <span style="color:var(--amber);font-size:10px;min-width:56px;text-align:right">+${fmt(delta)}</span>
+    </div>`).join('')
+    + `<div style="margin-top:8px;font-size:11px;color:var(--muted);text-align:center">
+         ${camb.length} de ${cache.servicios.length} servicios cambian
+       </div>`;
+};
+
+window.aplicarAumento = async function() {
+  if(!requireAdmin()) return;
+  if(_aumentando) { toast('Aplicando, aguardá un momento...','warn'); return; }
+
+  const camb = calcularAumento();
+  if(!camb.length) { toast('Ingresá un valor válido','err'); return; }
+
+  const detalle = camb.map(({s,nuevo}) => `• ${s.nombre}: ${fmt(s.precio)} → ${fmt(nuevo)}`).join('\n');
+  if(!confirm(`AUMENTO DE PRECIOS (${camb.length} servicios)\n\n${detalle}\n\nNo afecta lavados ya registrados.\n\n¿Confirmar?`)) return;
+
+  _aumentando = true;
+  const btn = document.getElementById('btn-aplicar-aum');
+  if(btn) { btn.disabled = true; btn.textContent = 'Aplicando...'; }
+
+  let aplicados = 0;
+  try {
+    for(const {s, nuevo} of camb) {
+      await fsUpdate('servicios', s.id, {precio: nuevo});
+      const cs = cache.servicios.find(x=>x.id===s.id);
+      if(cs) cs.precio = nuevo;
+      aplicados++;
+    }
+    await auditLog('AUMENTO PRECIOS', `${aplicados} servicios actualizados`);
+    renderSrvcfg(); renderQGrid(); closeM('m-aum');
+    toast(`${aplicados} precios actualizados`, 'ok');
+  } catch(err) {
+    console.error('aplicarAumento:', err);
+    renderSrvcfg(); renderQGrid();
+    toast(`⚠ Error tras actualizar ${aplicados} de ${camb.length}. Revisá los precios.`, 'err');
+  } finally {
+    _aumentando = false;
+    if(btn) { btn.disabled = false; btn.textContent = 'Aplicar'; }
+  }
+};
+
 window.eliminarSrv = async function(id) {
   if(!requireAdmin()) return;
   if(!confirm('¿Eliminar?')) return;
