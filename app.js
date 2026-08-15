@@ -514,6 +514,41 @@ function jornalDia(fecha) {
   return cache.empleados.reduce((s,e)=>s + factorDia(fecha, e.id) * e.jornal, 0);
 }
 
+// ─── ADELANTOS ─────────────────────────────────────────────────
+// Un adelanto puede quedar saldado a medias: si el empleado sacó más de lo que
+// llegó a trabajar, la parte no cubierta sigue siendo deuda para la semana que
+// viene. `saldado` guarda cuánto se descontó hasta ahora; sin ese campo (datos
+// viejos) el adelanto vale 0 si está pagado y entero si no.
+function saldoAdl(a) {
+  return a.pagado ? 0 : Math.max(0, a.monto - (a.saldado||0));
+}
+
+// Adelantos que el empleado todavía debe al cierre de `hasta`, más viejos
+// primero. Incluye los arrastrados de semanas anteriores.
+function adelantosPendientes(empId, hasta) {
+  return cache.adelantos
+    .filter(a => a.empId===empId && a.fecha<=hasta && saldoAdl(a) > 0)
+    .sort((a,b) => (a.fecha||'').localeCompare(b.fecha||''));
+}
+
+// Reparte el bruto de la semana contra los adelantos pendientes (el más viejo
+// primero). Devuelve qué se cubre de cada uno, cuánto queda a cobrar en mano
+// (`neto`) y cuánta deuda se arrastra a la próxima semana (`deuda`).
+function aplicarBrutoAAdelantos(bruto, adls) {
+  let restante = bruto;
+  const aplicaciones = [];
+  for(const a of adls) {
+    if(restante <= 0) break;
+    const saldo    = saldoAdl(a);
+    const aplicado = Math.min(saldo, restante);
+    restante -= aplicado;
+    aplicaciones.push({a, aplicado, saldoNuevo: saldo - aplicado});
+  }
+  const pendiente = adls.reduce((s,a)=>s+saldoAdl(a), 0);
+  return {aplicaciones, neto: restante, cubierto: bruto - restante,
+          pendiente, deuda: pendiente - (bruto - restante)};
+}
+
 // ─── DASHBOARD ─────────────────────────────────────────────────
 function jornalDevengado(fechaDesde, fechaHasta) {
   const dias = diasEnRango(fechaDesde, fechaHasta);
@@ -916,7 +951,7 @@ function renderDashboard() {
     const diasTrab  = diasTrabajados(diasEmp, e.id);
     const bruto     = diasTrab * e.jornal;
     // Solo adelantos del período visible (mismo criterio que cerrarSemana)
-    const adlPend   = cache.adelantos.filter(a=>a.empId===e.id&&!a.pagado&&a.fecha>=empF1&&a.fecha<=empF2).reduce((s,a)=>s+a.monto,0);
+    const adlPend   = adelantosPendientes(e.id, empF2).reduce((s,a)=>s+saldoAdl(a),0);
     // Descontar el bruto ya cubierto en cierres de semana del rango.
     // Usamos ep.bruto (no ep.neto) porque los adelantos ya están marcados como pagados.
     // Deduplicamos por f1+f2 para no contar doble si hay registros duplicados.
@@ -1847,9 +1882,11 @@ function renderEmpleados() {
   const semanaPagada = (cache.semanasPagadas||[]).some(sp=>sp.f1===f1&&sp.f2===f2);
 
   document.getElementById('emp-grid').innerHTML = cache.empleados.map(e => {
-    // Solo adelantos pendientes dentro del período seleccionado (igual que cerrarSemana)
-    const adlSem   = cache.adelantos.filter(a=>a.empId===e.id&&!a.pagado&&a.fecha>=f1&&a.fecha<=f2);
-    const totalAdl = adlSem.reduce((s,a)=>s+a.monto,0);
+    // Adelantos pendientes, incluidos los arrastrados (igual que cerrarSemana)
+    const adlSem   = adelantosPendientes(e.id, f2);
+    const totalAdl = adlSem.reduce((s,a)=>s+saldoAdl(a),0);
+    // Los que quedaron debiendo de semanas anteriores al período visible
+    const arrastre = adlSem.filter(a=>a.fecha<f1).reduce((s,a)=>s+saldoAdl(a),0);
     const diasTrab = diasTrabajados(dias, e.id);
     const medios   = dias.filter(d=>factorDia(d,e.id)===0.5).length;
     const bruto    = diasTrab * e.jornal;
@@ -1901,10 +1938,12 @@ function renderEmpleados() {
           <div class="erow"><span style="color:var(--muted)">Días</span><span style="color:var(--cyan);font-weight:600">${fmtDias(diasTrab)}${medios>0?` <span style="color:var(--amber);font-size:10px;font-weight:500">(${medios} ½)</span>`:''}</span></div>
           <div class="erow"><span style="color:var(--muted)">Bruto</span><span>${fmt(bruto)}</span></div>
           <div class="erow"><span style="color:var(--muted)">Adelantos</span><span style="color:var(--red)">${totalAdl>0?'− '+fmt(totalAdl):'—'}</span></div>
+          ${arrastre>0?`<div class="erow"><span style="color:var(--muted2);font-size:11px;">↳ viene debiendo</span><span style="color:var(--amber);font-size:11px;font-weight:600">${fmt(arrastre)}</span></div>`:''}
+          ${neto<0?`<div class="erow"><span style="color:var(--muted2);font-size:11px;">↳ pasa a la próxima</span><span style="color:var(--amber);font-size:11px;font-weight:600">${fmt(Math.abs(neto))}</span></div>`:''}
         </div>
       </div>
       <div class="ecard-foot" style="${neto===0||yaPagado>0?'background:rgba(46,204,138,.08);':''}">
-        <span style="font-size:11px;color:var(--muted)">${yaPagado>0?'Semana pagada':'A cobrar'}</span>
+        <span style="font-size:11px;color:var(--muted)">${yaPagado>0?'Semana pagada':neto<0?'Queda debiendo':'A cobrar'}</span>
         <span style="font-size:18px;font-weight:700;color:${neto>0?'var(--amber)':neto===0?'var(--green)':'var(--red)'}">
           ${neto>0?fmt(neto):neto===0?'✓ $0':'− '+fmt(Math.abs(neto))}
         </span>
@@ -1917,12 +1956,17 @@ function renderEmpleados() {
   document.getElementById('tbody-adl').innerHTML = adls.length
     ? adls.map(a => {
         const e = cache.empleados.find(x=>x.id===a.empId);
+        const saldo = saldoAdl(a);
+        // Parcial: se descontó una parte en un cierre y el resto sigue debiéndose
+        const estado = a.pagado ? {cls:'bg_', txt:'Pagado'}
+                     : a.saldado ? {cls:'ba', txt:`Parcial — resta ${fmt(saldo)}`}
+                     : {cls:'ba', txt:'Pendiente'};
         return `<tr>
           <td>${fmtDL(a.fecha)}</td>
           <td style="font-weight:500">${e?.nombre||'—'}</td>
           <td style="color:var(--red);font-weight:600">${fmt(a.monto)}</td>
           <td style="color:var(--muted2)">${a.user||'—'}</td>
-          <td><span class="badge ${a.pagado?'bg_':'ba'}">${a.pagado?'Pagado':'Pendiente'}</span></td>
+          <td><span class="badge ${estado.cls}">${estado.txt}</span></td>
           <td><button class="btn br" onclick="eliminarAdl('${a.id}','${a.empId}','${a.fecha}',${a.monto})">✕</button></td>
         </tr>`;
       }).join('')
@@ -2011,34 +2055,36 @@ window.cerrarSemana = async function() {
 
   // ── Pre-calcular para mostrar resumen antes de confirmar ──────
   const datosEmp = cache.empleados.map(e => {
-    const diasTrab   = diasTrabajados(dias, e.id);  // medios cuentan 0.5
-    const bruto      = diasTrab * e.jornal;
-    // Solo adelantos pendientes dentro del rango de la semana
-    const adlsPend   = cache.adelantos.filter(a=>a.empId===e.id&&!a.pagado&&a.fecha>=f1&&a.fecha<=f2);
-    const adelantado = adlsPend.reduce((s,a)=>s+a.monto,0);
-    const neto       = bruto - adelantado;
-    return {e, diasTrab, bruto, adlsPend, adelantado, neto};
-  }).filter(x=>x.diasTrab>0||x.adelantado>0); // solo empleados con actividad
+    const diasTrab = diasTrabajados(dias, e.id);  // medios cuentan 0.5
+    const bruto    = diasTrab * e.jornal;
+    // Incluye adelantos arrastrados de semanas anteriores, no solo los de esta
+    const adlsPend = adelantosPendientes(e.id, f2);
+    const rep      = aplicarBrutoAAdelantos(bruto, adlsPend);
+    return {e, diasTrab, bruto, adlsPend, ...rep};
+  }).filter(x=>x.diasTrab>0||x.pendiente>0); // solo empleados con actividad
 
   if(!datosEmp.length) { toast('Sin actividad en este período','warn'); return; }
 
-  const totalCaja = datosEmp.reduce((s,x)=>s+Math.max(0,x.neto),0);
+  const totalCaja = datosEmp.reduce((s,x)=>s+x.neto,0);
+  const totalDeuda = datosEmp.reduce((s,x)=>s+x.deuda,0);
 
   // Resumen legible para el confirm
   const lineas = datosEmp.map(x=>{
-    const adlTxt = x.adelantado>0 ? ` − ${fmt(x.adelantado)} adelantos` : '';
-    const nTxt   = x.neto>=0 ? `= ${fmt(x.neto)} a pagar` : `= ${fmt(Math.abs(x.neto))} a favor del negocio`;
-    return `• ${x.e.nombre}: ${fmtDias(x.diasTrab)}d × ${fmt(x.e.jornal)}${adlTxt} ${nTxt}`;
+    const adlTxt   = x.cubierto>0 ? ` − ${fmt(x.cubierto)} adelantos` : '';
+    const deudaTxt = x.deuda>0 ? `  ⚠ quedan ${fmt(x.deuda)} para la próxima semana` : '';
+    return `• ${x.e.nombre}: ${fmtDias(x.diasTrab)}d × ${fmt(x.e.jornal)}${adlTxt} = ${fmt(x.neto)} a pagar${deudaTxt}`;
   });
   lineas.push(`\nTOTAL a descontar de caja: ${fmt(totalCaja)}`);
+  if(totalDeuda > 0) lineas.push(`Deuda que se arrastra: ${fmt(totalDeuda)}`);
   if(!confirm(`PAGO DE SEMANA  ${fmtDL(f1)} al ${fmtDL(f2)}\n\n${lineas.join('\n')}\n\n¿Confirmar?`)) return;
 
   // ── Ejecutar pagos ────────────────────────────────────────────
   // Orden deliberado: la semana se marca como pagada ANTES de mover plata.
   // Si algo falla a mitad de camino, un reintento choca con la guardia
   // `yaExiste` en lugar de duplicar egresos en caja.
-  const pagosEmpleados = datosEmp.map(({e, diasTrab, bruto, adelantado, neto}) =>
-    ({empId:e.id, nombre:e.nombre, diasTrab, bruto, adelantado, neto}));
+  // `adelantado` = lo efectivamente descontado esta semana; `deuda` = lo que sigue debiendo
+  const pagosEmpleados = datosEmp.map(({e, diasTrab, bruto, cubierto, deuda, neto}) =>
+    ({empId:e.id, nombre:e.nombre, diasTrab, bruto, adelantado:cubierto, deuda, neto}));
   const semPagada = {f1, f2, total:totalCaja, fecha:hoy(), user:cu.nombre, empleados:pagosEmpleados};
   const spId = await fsAdd('semanasPagadas', semPagada);
   if(!cache.semanasPagadas) cache.semanasPagadas = [];
@@ -2055,23 +2101,29 @@ window.cerrarSemana = async function() {
     }
   }
 
-  for(const {adlsPend} of datosEmp) {
-    for(const a of adlsPend) {
-      await fsUpdate('adelantos', a.id, {pagado:true});
+  // Saldar adelantos SOLO hasta donde alcanza el trabajo de la semana. Lo que
+  // no se cubre queda pendiente y se arrastra al próximo cierre.
+  for(const {aplicaciones} of datosEmp) {
+    for(const {a, aplicado, saldoNuevo} of aplicaciones) {
+      const saldado = (a.saldado||0) + aplicado;
+      const campos  = saldoNuevo === 0 ? {saldado, pagado:true} : {saldado};
+      await fsUpdate('adelantos', a.id, campos);
       const ca = cache.adelantos.find(x=>x.id===a.id);
-      if(ca) ca.pagado = true;
+      if(ca) Object.assign(ca, campos);
     }
   }
 
-  await auditLog('CIERRE SEMANA', `${fmtDL(f1)} al ${fmtDL(f2)} — ${fmt(totalCaja)}`);
+  await auditLog('CIERRE SEMANA', `${fmtDL(f1)} al ${fmtDL(f2)} — ${fmt(totalCaja)}`
+    + (totalDeuda>0 ? ` — deuda arrastrada ${fmt(totalDeuda)}` : ''));
 
   // ── Mostrar estado "todo pagado" antes de avanzar ─────────────
   renderEmpleados(); renderCaja(); renderDashboard();
 
   const resumenPago = datosEmp.map(x=>
-    `${x.e.nombre}: ${x.neto > 0 ? fmt(x.neto) : '✓ $0'}`
+    `${x.e.nombre}: ${x.neto > 0 ? fmt(x.neto) : '✓ $0'}${x.deuda > 0 ? ` (debe ${fmt(x.deuda)})` : ''}`
   ).join(' · ');
-  toast(`✓ Semana ${fmtDL(f1)}–${fmtDL(f2)} — Todo pagado al día  |  ${resumenPago}`, 'ok');
+  toast(`✓ Semana ${fmtDL(f1)}–${fmtDL(f2)} — ${totalDeuda>0?'Cerrada con deuda pendiente':'Todo pagado al día'}  |  ${resumenPago}`,
+    totalDeuda>0 ? 'warn' : 'ok');
 
   // ── Avanzar a la próxima semana luego de 2.5 s ────────────────
   const fmtFecha = d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
