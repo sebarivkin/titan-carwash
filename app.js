@@ -466,9 +466,17 @@ window.go = function(id, btn) {
   if(id==='registrar') { renderQGrid(); renderHistorial(); }
   if(id==='caja')      renderCaja();
   if(id==='empleados') {
+    ajustarSemanaVisible();
     renderEmpleados(); // render inmediato con lo que hay
-    // Luego refresca las colecciones críticas desde Firestore
-    refreshCritical().then(()=>{ if(cu) renderEmpleados(); });
+    // Luego refresca desde Firestore: si otro socio cerró la semana mientras
+    // tanto, el rango salta solo a la siguiente y se avisa.
+    refreshCritical().then(()=>{
+      if(!cu) return;
+      if(ajustarSemanaVisible()) {
+        toast(`Otro usuario cerró esa semana — pasás a ${fmtDL(document.getElementById('sem-ini').value)}`, 'warn');
+      }
+      renderEmpleados();
+    });
   }
   if(id==='stock')     renderStock();
   if(id==='auditoria') renderAudit();
@@ -483,6 +491,7 @@ window.go = function(id, btn) {
 };
 
 function renderAll() {
+  ajustarSemanaVisible(); // ya hay semanasPagadas: ubicar la semana pendiente
   renderDashboard(); renderQGrid(); renderHistorial();
   renderCaja(); renderEmpleados(); renderAudit();
   renderUsers(); renderSrvcfg(); renderBebcfg(); renderEmpcfg();
@@ -1872,6 +1881,52 @@ function diasEnRango(f1,f2) {
   return dias;
 }
 
+// ─── SEMANA VISIBLE ────────────────────────────────────────────
+// El rango de fechas de Empleados vive en los inputs, así que es local a cada
+// sesión: si un socio cierra la semana desde su celular, los demás seguían
+// viendo esa misma semana marcada como "pagada" en lugar de pasar a la
+// siguiente. Por eso el rango arranca siempre en la primera semana sin cerrar,
+// salvo que el usuario haya elegido otras fechas a mano.
+let _semanaManual = false;
+
+const sumarDias = (fecha, n) => {
+  const d = new Date(fecha+'T12:00'); d.setDate(d.getDate()+n);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+};
+
+function primeraSemanaImpaga() {
+  let f1 = semIni(), f2 = semFin();
+  // Tope de 52 saltos por si alguna semana futura quedara cerrada por error
+  for(let i=0; i<52; i++) {
+    if(!(cache.semanasPagadas||[]).some(sp=>sp.f1===f1&&sp.f2===f2)) break;
+    f1 = sumarDias(f1, 7); f2 = sumarDias(f2, 7);
+  }
+  return {f1, f2};
+}
+
+// Reposiciona el rango en la primera semana sin cerrar. Devuelve true si movió
+// algo. No toca nada si el usuario eligió las fechas (p.ej. para consultar una
+// semana vieja) — ahí manda su elección.
+function ajustarSemanaVisible() {
+  if(_semanaManual) return false;
+  const iIni = document.getElementById('sem-ini'), iFin = document.getElementById('sem-fin');
+  if(!iIni || !iFin) return false;
+  const {f1, f2} = primeraSemanaImpaga();
+  if(iIni.value === f1 && iFin.value === f2) return false;
+  iIni.value = f1; iFin.value = f2;
+  return true;
+}
+
+// Las fechas tocadas a mano fijan la semana hasta que se cierre una o se
+// apriete "Semana actual".
+window.semanaCambiada = function() { _semanaManual = true; renderEmpleados(); };
+
+window.volverSemanaActual = function() {
+  _semanaManual = false;
+  ajustarSemanaVisible();
+  renderEmpleados();
+};
+
 function renderEmpleados() {
   const f1   = document.getElementById('sem-ini').value || semIni();
   const f2   = document.getElementById('sem-fin').value || semFin();
@@ -2126,14 +2181,13 @@ window.cerrarSemana = async function() {
     totalDeuda>0 ? 'warn' : 'ok');
 
   // ── Avanzar a la próxima semana luego de 2.5 s ────────────────
-  const fmtFecha = d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   setTimeout(() => {
-    const sig    = new Date(f2+'T12:00'); sig.setDate(sig.getDate()+1);
-    const sigFin = new Date(sig); sigFin.setDate(sig.getDate()+6);
-    document.getElementById('sem-ini').value = fmtFecha(sig);
-    document.getElementById('sem-fin').value = fmtFecha(sigFin);
+    // Cerrar una semana descarta la selección manual: lo que importa ahora es
+    // la próxima pendiente, igual que verán los demás socios al entrar.
+    _semanaManual = false;
+    ajustarSemanaVisible();
     renderEmpleados();
-    toast(`Semana ${fmtDL(fmtFecha(sig))}–${fmtDL(fmtFecha(sigFin))} lista para cargar`, 'ok');
+    toast(`Semana ${fmtDL(document.getElementById('sem-ini').value)}–${fmtDL(document.getElementById('sem-fin').value)} lista para cargar`, 'ok');
   }, 2500);
 
   } catch(err) {

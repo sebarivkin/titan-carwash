@@ -392,8 +392,9 @@
   <div class="card">
     <div class="card-hdr"><span class="card-title">Semana en curso</span>
       <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
-        <div><div class="lbl">Inicio</div><input type="date" id="sem-ini" oninput="renderEmpleados()" style="font-size:12px;padding:5px 8px;width:135px;"></div>
-        <div><div class="lbl">Fin</div><input type="date" id="sem-fin" oninput="renderEmpleados()" style="font-size:12px;padding:5px 8px;width:135px;"></div>
+        <div><div class="lbl">Inicio</div><input type="date" id="sem-ini" oninput="semanaCambiada()" style="font-size:12px;padding:5px 8px;width:135px;"></div>
+        <div><div class="lbl">Fin</div><input type="date" id="sem-fin" oninput="semanaCambiada()" style="font-size:12px;padding:5px 8px;width:135px;"></div>
+        <button class="btn bs" onclick="volverSemanaActual()" style="padding:7px 12px;font-size:12px;" title="Ir a la primera semana sin cerrar">Semana pendiente</button>
         <button id="btn-pagar-semana" class="btn bg" onclick="cerrarSemana()" style="padding:7px 16px;font-size:12px;">Pagar semana</button>
       </div>
     </div>
