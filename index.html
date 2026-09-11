@@ -221,6 +221,19 @@
     <div class="card-body" id="dash-tipos"></div>
   </div>
 
+  <!-- 5d. Lavados por semana (lunes a sábado) -->
+  <div class="card" style="margin-bottom:1.25rem;">
+    <div class="card-hdr">
+      <span class="card-title">Lavados por semana <span style="font-weight:400;color:var(--muted)">· lun a sáb</span></span>
+      <select id="lavsem-n" onchange="renderDashboard()" style="font-size:11px;padding:4px 8px;">
+        <option value="8">Últimas 8</option>
+        <option value="12" selected>Últimas 12</option>
+        <option value="26">Últimas 26</option>
+      </select>
+    </div>
+    <div class="card-body" id="dash-lavsem"></div>
+  </div>
+
   <!-- 6. Días de la semana -->
   <div class="card" style="margin-bottom:1.25rem;">
     <div class="card-hdr"><span class="card-title">Promedio de autos por día de semana</span><span id="mejor-dia-badge" style="font-size:11px;color:var(--cyan);font-weight:600;"></span></div>

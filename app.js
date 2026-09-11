@@ -655,6 +655,93 @@ function renderTiposLavado(soloLavados, semIniF, mesIniF, hoyF) {
     </div>`;
 }
 
+// ─── LAVADOS POR SEMANA ────────────────────────────────────────
+// Semanas de lunes a sábado: los lavados de domingo no cuentan. La semana en
+// curso se muestra pero no entra en promedio ni récord porque está incompleta;
+// en su lugar se compara contra la anterior al mismo día.
+function lunesDe(fecha) {
+  const dow = new Date(fecha+'T12:00').getDay();
+  return sumarDias(fecha, dow === 0 ? -6 : 1 - dow);
+}
+
+function renderLavadosSemana(soloLavados, hoyF) {
+  const el = document.getElementById('dash-lavsem');
+  if(!el) return;
+
+  const lavs = soloLavados.filter(l => l.fecha && l.fecha <= hoyF
+    && new Date(l.fecha+'T12:00').getDay() !== 0);
+  if(!lavs.length) {
+    el.innerHTML = '<div class="empty" style="padding:24px 0">Sin lavados registrados</div>';
+    return;
+  }
+
+  const conteo = {};
+  lavs.forEach(l => { const k = lunesDe(l.fecha); conteo[k] = (conteo[k]||0) + 1; });
+
+  // Semanas consecutivas hasta la actual, sin ir más atrás que el primer lavado.
+  // Las semanas sin lavados quedan en 0: son semanas reales, no se saltean.
+  const n       = +(document.getElementById('lavsem-n')?.value || 12);
+  const actual  = lunesDe(hoyF);
+  const primera = Object.keys(conteo).sort()[0];
+  const semanas = [];
+  for(let k = actual; semanas.length < n && k >= primera; k = sumarDias(k, -7)) semanas.unshift(k);
+
+  const cant     = k => conteo[k] || 0;
+  const enCurso  = hoyF < sumarDias(actual, 5);   // el sábado todavía cuenta como en curso
+  const cerradas = enCurso ? semanas.slice(0, -1) : semanas;
+
+  const prom  = cerradas.length ? cerradas.reduce((s,k)=>s+cant(k),0) / cerradas.length : 0;
+  const mejor = cerradas.reduce((a,k)=>cant(k)>cant(a)?k:a, cerradas[0]);
+
+  // Semana en curso vs. la anterior hasta el mismo día de la semana
+  const hoyMenos7   = sumarDias(hoyF, -7);
+  const antMismoDia = lavs.filter(l => l.fecha >= sumarDias(actual,-7) && l.fecha <= hoyMenos7).length;
+
+  // Última semana cerrada vs. la previa
+  const ult = cerradas[cerradas.length-1], pen = cerradas[cerradas.length-2];
+  const varPct = (ult && pen && cant(pen) > 0) ? Math.round((cant(ult)-cant(pen))/cant(pen)*100) : null;
+
+  const maxC = Math.max(...semanas.map(cant), 1);
+  const barras = semanas.map(k => {
+    const c     = cant(k);
+    const esAct = k === actual && enCurso;
+    const hh    = Math.max(3, Math.round(c/maxC*90));
+    const tip   = `Semana ${fmtDL(k)} al ${fmtDL(sumarDias(k,5))}: ${c} lavado${c===1?'':'s'}${esAct?' (en curso)':''}`;
+    return `<div class="bc-col" title="${tip}">
+      <div class="bc-val" style="${esAct?'color:var(--cyan);font-weight:700':''}">${c||''}</div>
+      <div class="bc-bar ${esAct?'hoy':''}" style="height:${hh}px;${c?'':'background:var(--border2)'}"></div>
+      <div class="bc-lbl" style="${esAct?'color:var(--cyan);font-weight:700':''}">${esAct?'hoy':fmtD(k)}</div>
+    </div>`;
+  }).join('');
+
+  const dato = (lbl, val, sub, col='var(--text)') => `
+    <div style="background:var(--dark3);border:1px solid var(--border);border-radius:8px;padding:8px 10px;">
+      <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">${lbl}</div>
+      <div style="font-size:18px;font-weight:700;color:${col};line-height:1.3">${val}</div>
+      <div style="font-size:10px;color:var(--muted2)">${sub}</div>
+    </div>`;
+
+  const resumen = [
+    enCurso ? dato('Esta semana', cant(actual),
+      `la anterior a esta altura: ${antMismoDia}`,
+      cant(actual) >= antMismoDia ? 'var(--green)' : 'var(--amber)') : '',
+    cerradas.length ? dato('Promedio semanal', prom.toLocaleString('es-AR',{maximumFractionDigits:1}),
+      `${cerradas.length} semana${cerradas.length===1?'':'s'} cerrada${cerradas.length===1?'':'s'}`) : '',
+    mejor ? dato('Mejor semana', cant(mejor), `${fmtDL(mejor)} al ${fmtDL(sumarDias(mejor,5))}`, 'var(--cyan)') : '',
+    varPct !== null ? dato('Última vs. anterior', `${varPct>0?'+':''}${varPct}%`,
+      `${cant(ult)} vs ${cant(pen)} lavados`, varPct >= 0 ? 'var(--green)' : 'var(--red)') : '',
+  ].join('');
+
+  // Con muchas semanas las barras no entran en un celular: scroll horizontal propio.
+  // El contenedor con overflow recorta en vertical, así que el alto tiene que
+  // alcanzar para la barra más alta (90px) más su número y la etiqueta.
+  el.innerHTML = `
+    <div style="overflow-x:auto;">
+      <div class="barchart" style="height:130px;min-width:${semanas.length*26}px;">${barras}</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-top:12px;">${resumen}</div>`;
+}
+
 // ─── COSTOS FIJOS ──────────────────────────────────────────────
 function renderCostosFijos() {
   const costos  = cache.costosFijos || [];
@@ -1086,6 +1173,9 @@ function renderDashboard() {
 
   // Gráfico torta: composición por tipo de lavado (Común / Premium / etc.)
   renderTiposLavado(soloLavados, si, mi, h);
+
+  // Cantidad de lavados por semana (lunes a sábado)
+  renderLavadosSemana(soloLavados, h);
 
   // Gráfico días de la semana
   const dowEl = document.getElementById('dash-dow-chart');
