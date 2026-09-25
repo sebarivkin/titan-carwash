@@ -2901,7 +2901,7 @@ async function cargarPlusEnConfig() {
   if(chk) chk.checked = !!c.activo;
   set('cfg-plus-monto',  c.monto);
   set('cfg-plus-umbral', c.umbral);
-  set('cfg-plus-desde',  c.desde || '');
+  set('cfg-plus-desde',  c.desde || hoy());  // por defecto rige de hoy en adelante
 }
 
 window.guardarCfgPlus = async function() {
@@ -2911,9 +2911,9 @@ window.guardarCfgPlus = async function() {
   const umbral = Number(document.getElementById('cfg-plus-umbral')?.value);
   if(!monto  || monto  <= 0) { toast('Ingresá un monto válido','err'); return; }
   if(!umbral || umbral <  1) { toast('El mínimo de autos debe ser 1 o más','err'); return; }
-  // Sin fecha de vigencia el plus se aplicaría a semanas ya pagadas y aparecerían
-  // como si quedara plata por cobrar. Por defecto rige desde el lunes de esta semana.
-  const desde = document.getElementById('cfg-plus-desde')?.value || lunesDe(hoy());
+  // Sin fecha de vigencia el plus se aplicaría a días ya pagados y aparecerían
+  // como si quedara plata por cobrar. Por defecto rige de hoy en adelante.
+  const desde = document.getElementById('cfg-plus-desde')?.value || hoy();
   const data = { activo, monto, umbral, desde };
   try {
     await db.collection('config').doc('plus').set(data, { merge: true });
