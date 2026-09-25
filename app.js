@@ -140,7 +140,7 @@ let cache = {
   usuarios: [], empleados: [], servicios: [], bebidas: [],
   lavados: [], caja: [], adelantos: [], asistencia: {}, asistMedio: {}, audit: [],
   stockHist: [], semanasPagadas: [], costosFijos: [],
-  analisis_cfg: null
+  analisis_cfg: null, plus_cfg: null
 };
 
 // ─── FIRESTORE HELPERS ─────────────────────────────────────────
@@ -220,7 +220,7 @@ async function initApp() {
 
 async function loadAllFromFirebase() {
   // Todas las consultas EN PARALELO — mucho más rápido
-  const [usuarios, empleados, servicios, bebidas, lavados, caja, adelantos, asistSnap, stockHist, semanasPagadas, costosFijos] = await Promise.all([
+  const [usuarios, empleados, servicios, bebidas, lavados, caja, adelantos, asistSnap, stockHist, semanasPagadas, costosFijos, plusSnap] = await Promise.all([
     db.collection('usuarios').get(),
     db.collection('empleados').get(),
     db.collection('servicios').get(),
@@ -232,6 +232,7 @@ async function loadAllFromFirebase() {
     db.collection('stockHist').get(),
     db.collection('semanasPagadas').get(),
     db.collection('costosFijos').get(),
+    db.collection('config').doc('plus').get(),
   ]);
 
   cache.usuarios       = usuarios.docs.map(d=>({id:d.id,...d.data()}));
@@ -244,6 +245,7 @@ async function loadAllFromFirebase() {
   cache.stockHist      = stockHist.docs.map(d=>({id:d.id,...d.data()}));
   cache.semanasPagadas = semanasPagadas.docs.map(d=>({id:d.id,...d.data()}));
   cache.costosFijos    = costosFijos.docs.map(d=>({id:d.id,...d.data()}));
+  cache.plus_cfg       = plusSnap.exists ? { ...PLUS_DEFAULTS, ...plusSnap.data() } : { ...PLUS_DEFAULTS };
   cache.asistencia = {}; cache.asistMedio = {};
   asistSnap.docs.forEach(d => {
     cache.asistencia[d.id] = d.data().empleados || [];
@@ -271,6 +273,7 @@ async function refreshCritical() {
       cache.asistencia[d.id] = d.data().empleados||[];
       cache.asistMedio[d.id] = d.data().medios||[];
     });
+    await loadPlusCfg(true);
     saveLocalCache();
   } catch(e) { console.warn('refreshCritical error:', e); }
 }
@@ -485,7 +488,7 @@ window.go = function(id, btn) {
   if(id==='analisis')  renderAnalisisFinanciero();
   if(id==='config')    {
     // Cada render aislado: si uno falla, los demás igual se ejecutan
-    [renderUsers, renderSrvcfg, renderBebcfg, renderEmpcfg, cargarSaldoEnConfig]
+    [renderUsers, renderSrvcfg, renderBebcfg, renderEmpcfg, cargarSaldoEnConfig, cargarPlusEnConfig]
       .forEach(fn=>{ try { fn(); } catch(e){ console.error('Error en', fn.name, e); } });
   }
 };
@@ -518,9 +521,61 @@ function fmtDias(n) {
   return n % 1 === 0 ? String(ent) : (ent === 0 ? '½' : `${ent}½`);
 }
 
-// Jornal devengado de todos los empleados en una fecha puntual
-function jornalDia(fecha) {
-  return cache.empleados.reduce((s,e)=>s + factorDia(fecha, e.id) * e.jornal, 0);
+// ─── PLUS POR DÍA DE ALTA DEMANDA ──────────────────────────────
+// Los días en que se lavan más de N autos, cada empleado presente cobra un plus
+// fijo. Se calcula solo a partir de los lavados y la asistencia — no se marca a
+// mano. Como es calculado y no guardado, `desde` evita que aparezca en semanas
+// que ya se pagaron sin él (ahí el bruto viejo quedó congelado en semanasPagadas).
+const PLUS_DEFAULTS = { activo:false, umbral:10, monto:5000, desde:null };
+
+function plusCfg() { return cache.plus_cfg || PLUS_DEFAULTS; }
+
+async function loadPlusCfg(force) {
+  if(cache.plus_cfg !== null && cache.plus_cfg !== undefined && !force) return;
+  try {
+    const snap = await db.collection('config').doc('plus').get();
+    cache.plus_cfg = snap.exists ? { ...PLUS_DEFAULTS, ...snap.data() } : { ...PLUS_DEFAULTS };
+  } catch(e) {
+    console.warn('loadPlusCfg error:', e);
+    if(!cache.plus_cfg) cache.plus_cfg = { ...PLUS_DEFAULTS };
+  }
+}
+
+// Autos lavados por fecha. Mismo criterio que el resumen por día: todo lo que no
+// sea bebida cuenta como auto.
+function lavadosPorDia() {
+  const m = {};
+  cache.lavados.forEach(l => { if(l.cat !== 'Bebida' && l.fecha) m[l.fecha] = (m[l.fecha]||0) + 1; });
+  return m;
+}
+
+// Plus que le corresponde a UN empleado en UNA fecha (0 o el monto configurado).
+// Medio jornal cobra el plus entero: se premia el día movido, no las horas.
+function plusDia(fecha, empId, conteo) {
+  const c = plusCfg();
+  if(!c.activo) return 0;
+  if(c.desde && fecha < c.desde) return 0;     // nunca retroactivo
+  if(factorDia(fecha, empId) === 0) return 0;  // no estuvo
+  const autos = (conteo || lavadosPorDia())[fecha] || 0;
+  return autos > c.umbral ? c.monto : 0;
+}
+
+// Sueldo de la semana de un empleado — el único lugar donde se calcula el bruto.
+// `conteo` es opcional: pasarlo evita rearmar el mapa de autos por cada empleado.
+function brutoSemana(dias, e, conteo) {
+  const cnt      = conteo || lavadosPorDia();
+  const diasTrab = diasTrabajados(dias, e.id);
+  const diasPlus = dias.filter(d => plusDia(d, e.id, cnt) > 0);
+  const plus     = diasPlus.reduce((s,d) => s + plusDia(d, e.id, cnt), 0);
+  const jornal   = diasTrab * e.jornal;
+  return { diasTrab, jornal, diasPlus, plus, bruto: jornal + plus };
+}
+
+// Costo laboral devengado de todos los empleados en una fecha puntual
+function jornalDia(fecha, conteo) {
+  const cnt = conteo || lavadosPorDia();
+  return cache.empleados.reduce((s,e) =>
+    s + factorDia(fecha, e.id) * e.jornal + plusDia(fecha, e.id, cnt), 0);
 }
 
 // ─── ADELANTOS ─────────────────────────────────────────────────
@@ -559,12 +614,6 @@ function aplicarBrutoAAdelantos(bruto, adls) {
 }
 
 // ─── DASHBOARD ─────────────────────────────────────────────────
-function jornalDevengado(fechaDesde, fechaHasta) {
-  const dias = diasEnRango(fechaDesde, fechaHasta);
-  return cache.empleados.reduce((total,e) =>
-    total + diasTrabajados(dias, e.id) * e.jornal, 0);
-}
-
 // Los lavados guardan `servicio` (nombre) pero no `tipo`. Lo resolvemos contra
 // el catálogo de servicios; si el servicio fue borrado o es precio personalizado,
 // caemos al nombre ("... Premium") y en última instancia a "Otro".
@@ -949,7 +998,8 @@ function renderDashboard() {
   // Ingresos hoy: solo lavados + bebidas (cash real del servicio)
   const ingrH = cajaOp.filter(c=>c.fecha===h&&c.tipo==='ingreso'&&(c.cat==='Lavado'||c.cat==='Bebidas')).reduce((s,c)=>s+c.monto,0);
   // Egresos hoy: jornales devengados según asistencia (costo real del día)
-  const egrHOper = jornalDia(h);
+  const cntDia   = lavadosPorDia();
+  const egrHOper = jornalDia(h, cntDia);
   // Utilidad operativa del día
   const utilHOper = ingrH - egrHOper;
 
@@ -1044,8 +1094,7 @@ function renderDashboard() {
   const diasEmp = diasEnRango(empF1, empF2);
   let deudaSemana = 0;
   const resEmp = cache.empleados.map(e => {
-    const diasTrab  = diasTrabajados(diasEmp, e.id);
-    const bruto     = diasTrab * e.jornal;
+    const {diasTrab, bruto} = brutoSemana(diasEmp, e, cntDia);
     // Solo adelantos del período visible (mismo criterio que cerrarSemana)
     const adlPend   = adelantosPendientes(e.id, empF2).reduce((s,a)=>s+saldoAdl(a),0);
     // Descontar el bruto ya cubierto en cierres de semana del rango.
@@ -1152,7 +1201,7 @@ function renderDashboard() {
     const cDia    = cajaOp.filter(c=>c.fecha===d);
     const ingrLav = cDia.filter(c=>c.cat==='Lavado').reduce((s,c)=>s+c.monto,0);
     const ingrBeb = cDia.filter(c=>c.cat==='Bebidas').reduce((s,c)=>s+c.monto,0);
-    const jDia    = jornalDia(d);
+    const jDia    = jornalDia(d, cntDia);
     return ingrLav + ingrBeb - jDia;
   });
   const maxUtil7 = Math.max(...util7.map(Math.abs), 1);
@@ -1319,7 +1368,9 @@ window.verDetalleDia = function(fecha) {
   if(empConAsistencia.length) {
     const detJornales = empConAsistencia.map(e=>{
       const f = factorDia(fecha, e.id);
-      return e.nombre + ' ' + fmt(f * e.jornal) + (f === 0.5 ? ' (½ jornal)' : '');
+      const p = plusDia(fecha, e.id);
+      return e.nombre + ' ' + fmt(f * e.jornal + p)
+           + (f === 0.5 ? ' (½ jornal)' : '') + (p > 0 ? ' + plus' : '');
     }).join(', ');
     filasEgr.push(`<tr style="opacity:.7;">
       <td><span class="badge bw">Jornal devengado</span></td>
@@ -1382,6 +1433,7 @@ function renderResumenDias() {
     return;
   }
 
+  const cntResumen = lavadosPorDia();
   let tLav=0,tILav=0,tBeb=0,tIBeb=0,tEmp=0,tExtr=0,tUtil=0;
 
   document.getElementById('tbody-resumen-dias').innerHTML = diasActivos.map(fecha => {
@@ -1392,7 +1444,7 @@ function renderResumenDias() {
     const cantBeb  = lavsDia.filter(l=>l.cat==='Bebida').length;
     const ingrBeb  = cDia.filter(c=>c.cat==='Bebidas').reduce((s,c)=>s+c.monto,0);
     // Jornal devengado ese día — solo días trabajados × tarifa
-    const jDia     = jornalDia(fecha);
+    const jDia     = jornalDia(fecha, cntResumen);
     // Gastos extraordinarios (insumos, servicios, impuestos, etc.)
     const egrExtr  = cDia.filter(c=>c.tipo==='egreso'&&CATS_EXTR.includes(c.cat)).reduce((s,c)=>s+c.monto,0);
     // Utilidad operativa = ingresos - jornal devengado (sin gastos ext.)
@@ -2025,6 +2077,7 @@ function renderEmpleados() {
 
   // Verificar si esta semana ya fue pagada (mismo criterio que dashboard)
   const semanaPagada = (cache.semanasPagadas||[]).some(sp=>sp.f1===f1&&sp.f2===f2);
+  const cntDia = lavadosPorDia();
 
   document.getElementById('emp-grid').innerHTML = cache.empleados.map(e => {
     // Adelantos pendientes, incluidos los arrastrados (igual que cerrarSemana)
@@ -2032,9 +2085,8 @@ function renderEmpleados() {
     const totalAdl = adlSem.reduce((s,a)=>s+saldoAdl(a),0);
     // Los que quedaron debiendo de semanas anteriores al período visible
     const arrastre = adlSem.filter(a=>a.fecha<f1).reduce((s,a)=>s+saldoAdl(a),0);
-    const diasTrab = diasTrabajados(dias, e.id);
     const medios   = dias.filter(d=>factorDia(d,e.id)===0.5).length;
-    const bruto    = diasTrab * e.jornal;
+    const {diasTrab, jornal, diasPlus, plus, bruto} = brutoSemana(dias, e, cntDia);
 
     // Descontar lo ya pagado en semanasPagadas (mismo cálculo que dashboard)
     const semanasVistas = new Set();
@@ -2081,6 +2133,12 @@ function renderEmpleados() {
         <div class="dias-wrap">${diaButtons}</div>
         <div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;">
           <div class="erow"><span style="color:var(--muted)">Días</span><span style="color:var(--cyan);font-weight:600">${fmtDias(diasTrab)}${medios>0?` <span style="color:var(--amber);font-size:10px;font-weight:500">(${medios} ½)</span>`:''}</span></div>
+          ${plus>0?`
+          <div class="erow"><span style="color:var(--muted)">Jornales</span><span>${fmt(jornal)}</span></div>
+          <div class="erow" title="${diasPlus.map(d=>fmtDL(d)+' ('+(cntDia[d]||0)+' autos)').join(' · ')}">
+            <span style="color:var(--muted)">Plus (${diasPlus.length}d)</span>
+            <span style="color:var(--green)">+ ${fmt(plus)}</span>
+          </div>`:''}
           <div class="erow"><span style="color:var(--muted)">Bruto</span><span>${fmt(bruto)}</span></div>
           <div class="erow"><span style="color:var(--muted)">Adelantos</span><span style="color:var(--red)">${totalAdl>0?'− '+fmt(totalAdl):'—'}</span></div>
           ${arrastre>0?`<div class="erow"><span style="color:var(--muted2);font-size:11px;">↳ viene debiendo</span><span style="color:var(--amber);font-size:11px;font-weight:600">${fmt(arrastre)}</span></div>`:''}
@@ -2198,14 +2256,19 @@ window.cerrarSemana = async function() {
     return;
   }
 
+  // La config del plus puede haber cambiado desde otro dispositivo: releerla
+  // antes de mover plata es el único lugar donde sí podemos esperar.
+  await loadPlusCfg(true);
+
   // ── Pre-calcular para mostrar resumen antes de confirmar ──────
+  const cntDia = lavadosPorDia();
   const datosEmp = cache.empleados.map(e => {
-    const diasTrab = diasTrabajados(dias, e.id);  // medios cuentan 0.5
-    const bruto    = diasTrab * e.jornal;
+    // medios cuentan 0.5; el plus por día de alta demanda suma al bruto
+    const {diasTrab, jornal, diasPlus, plus, bruto} = brutoSemana(dias, e, cntDia);
     // Incluye adelantos arrastrados de semanas anteriores, no solo los de esta
     const adlsPend = adelantosPendientes(e.id, f2);
     const rep      = aplicarBrutoAAdelantos(bruto, adlsPend);
-    return {e, diasTrab, bruto, adlsPend, ...rep};
+    return {e, diasTrab, jornal, diasPlus, plus, bruto, adlsPend, ...rep};
   }).filter(x=>x.diasTrab>0||x.pendiente>0); // solo empleados con actividad
 
   if(!datosEmp.length) { toast('Sin actividad en este período','warn'); return; }
@@ -2215,9 +2278,10 @@ window.cerrarSemana = async function() {
 
   // Resumen legible para el confirm
   const lineas = datosEmp.map(x=>{
+    const plusTxt  = x.plus>0    ? ` + ${fmt(x.plus)} plus (${x.diasPlus.length}d)` : '';
     const adlTxt   = x.cubierto>0 ? ` − ${fmt(x.cubierto)} adelantos` : '';
     const deudaTxt = x.deuda>0 ? `  ⚠ quedan ${fmt(x.deuda)} para la próxima semana` : '';
-    return `• ${x.e.nombre}: ${fmtDias(x.diasTrab)}d × ${fmt(x.e.jornal)}${adlTxt} = ${fmt(x.neto)} a pagar${deudaTxt}`;
+    return `• ${x.e.nombre}: ${fmtDias(x.diasTrab)}d × ${fmt(x.e.jornal)}${plusTxt}${adlTxt} = ${fmt(x.neto)} a pagar${deudaTxt}`;
   });
   lineas.push(`\nTOTAL a descontar de caja: ${fmt(totalCaja)}`);
   if(totalDeuda > 0) lineas.push(`Deuda que se arrastra: ${fmt(totalDeuda)}`);
@@ -2228,18 +2292,19 @@ window.cerrarSemana = async function() {
   // Si algo falla a mitad de camino, un reintento choca con la guardia
   // `yaExiste` en lugar de duplicar egresos en caja.
   // `adelantado` = lo efectivamente descontado esta semana; `deuda` = lo que sigue debiendo
-  const pagosEmpleados = datosEmp.map(({e, diasTrab, bruto, cubierto, deuda, neto}) =>
-    ({empId:e.id, nombre:e.nombre, diasTrab, bruto, adelantado:cubierto, deuda, neto}));
+  const pagosEmpleados = datosEmp.map(({e, diasTrab, diasPlus, plus, bruto, cubierto, deuda, neto}) =>
+    ({empId:e.id, nombre:e.nombre, diasTrab, plus, diasPlus:diasPlus.length,
+      bruto, adelantado:cubierto, deuda, neto}));
   const semPagada = {f1, f2, total:totalCaja, fecha:hoy(), user:cu.nombre, empleados:pagosEmpleados};
   const spId = await fsAdd('semanasPagadas', semPagada);
   if(!cache.semanasPagadas) cache.semanasPagadas = [];
   cache.semanasPagadas.push({id:spId, ...semPagada});
 
-  for(const {e, diasTrab, neto} of datosEmp) {
+  for(const {e, diasTrab, diasPlus, plus, neto} of datosEmp) {
     // Solo registrar egreso en caja si hay diferencia positiva a pagar
     if(neto > 0) {
       const cm = {fecha:hoy(), tipo:'egreso', cat:'Sueldos',
-        desc:`Sueldo ${e.nombre} — ${fmtDias(diasTrab)} días (${fmtDL(f1)} al ${fmtDL(f2)})`,
+        desc:`Sueldo ${e.nombre} — ${fmtDias(diasTrab)} días${plus>0?` + plus ${diasPlus.length}d`:''} (${fmtDL(f1)} al ${fmtDL(f2)})`,
         monto:neto, pago:'Efectivo', user:cu.nombre};
       const cmId = await fsAdd('caja', cm);
       cache.caja.push({id:cmId, ...cm});
@@ -2827,6 +2892,40 @@ function cargarSaldoEnConfig() {
     document.getElementById('saldo-actual-txt').textContent = fmt(existing.monto) + ' al ' + fmtDL(existing.fecha);
   }
 }
+
+async function cargarPlusEnConfig() {
+  await loadPlusCfg();
+  const c = plusCfg();
+  const set = (id, v) => { const el = document.getElementById(id); if(el) el.value = v; };
+  const chk = document.getElementById('cfg-plus-activo');
+  if(chk) chk.checked = !!c.activo;
+  set('cfg-plus-monto',  c.monto);
+  set('cfg-plus-umbral', c.umbral);
+  set('cfg-plus-desde',  c.desde || '');
+}
+
+window.guardarCfgPlus = async function() {
+  if(!requireAdmin()) return;
+  const activo = !!document.getElementById('cfg-plus-activo')?.checked;
+  const monto  = Number(document.getElementById('cfg-plus-monto')?.value);
+  const umbral = Number(document.getElementById('cfg-plus-umbral')?.value);
+  if(!monto  || monto  <= 0) { toast('Ingresá un monto válido','err'); return; }
+  if(!umbral || umbral <  1) { toast('El mínimo de autos debe ser 1 o más','err'); return; }
+  // Sin fecha de vigencia el plus se aplicaría a semanas ya pagadas y aparecerían
+  // como si quedara plata por cobrar. Por defecto rige desde el lunes de esta semana.
+  const desde = document.getElementById('cfg-plus-desde')?.value || lunesDe(hoy());
+  const data = { activo, monto, umbral, desde };
+  try {
+    await db.collection('config').doc('plus').set(data, { merge: true });
+    cache.plus_cfg = { ...PLUS_DEFAULTS, ...cache.plus_cfg, ...data };
+    await auditLog('CONFIG PLUS', activo
+      ? `${fmt(monto)} por día con más de ${umbral} autos — desde ${fmtDL(desde)}`
+      : 'Plus desactivado');
+    toast('Plus guardado ✓','ok');
+    cargarPlusEnConfig();
+    renderEmpleados(); renderDashboard();
+  } catch(e) { console.error(e); toast('Error al guardar','err'); }
+};
 
 window.eliminarEmp = async function(id) {
   if(!requireAdmin()) return;
