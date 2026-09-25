@@ -2924,7 +2924,14 @@ window.guardarCfgPlus = async function() {
     toast('Plus guardado ✓','ok');
     cargarPlusEnConfig();
     renderEmpleados(); renderDashboard();
-  } catch(e) { console.error(e); toast('Error al guardar','err'); }
+  } catch(e) {
+    // Un permiso denegado no se arregla reintentando: hay que republicar las
+    // reglas de Firestore (crear un doc nuevo en /config requiere ser admin).
+    console.error(e);
+    toast(e?.code === 'permission-denied'
+      ? 'Sin permiso para guardar — hay que actualizar las reglas de Firestore'
+      : 'Error al guardar', 'err');
+  }
 };
 
 window.eliminarEmp = async function(id) {

@@ -25,11 +25,14 @@ service cloud.firestore {
 
     // ── Config / allowlist ───────────────────────────────────────
     // Solo admins pueden leer/escribir — EXCEPTO en el bootstrap inicial
-    // (cuando el documento no existe aún, permite crear para que el admin lo inicialice)
+    // (cuando el documento no existe aún, permite crear para que el admin lo inicialice).
+    // El admin también puede CREAR documentos de config nuevos: un set() sobre un
+    // doc que todavía no existe cuenta como create, no como update.
     match /config/{docId} {
       allow read:   if isAllowed();
-      allow create: if request.auth != null &&
-                       !exists(/databases/$(database)/documents/config/allowlist);
+      allow create: if isAdmin() ||
+                       (request.auth != null &&
+                        !exists(/databases/$(database)/documents/config/allowlist));
       allow update: if isAdmin();
       allow delete: if false;
     }
