@@ -541,11 +541,16 @@ async function loadPlusCfg(force) {
   }
 }
 
-// Autos lavados por fecha. Mismo criterio que el resumen por día: todo lo que no
-// sea bebida cuenta como auto.
+// Vehículos que cuentan para el plus, por fecha. Las motos no suman: dan mucho
+// menos trabajo que un auto, así que un día de motos no es un día movido.
+// Las bebidas tampoco, obviamente.
+const CAT_SIN_PLUS = ['Bebida', 'Moto'];
+
 function lavadosPorDia() {
   const m = {};
-  cache.lavados.forEach(l => { if(l.cat !== 'Bebida' && l.fecha) m[l.fecha] = (m[l.fecha]||0) + 1; });
+  cache.lavados.forEach(l => {
+    if(l.fecha && !CAT_SIN_PLUS.includes(l.cat)) m[l.fecha] = (m[l.fecha]||0) + 1;
+  });
   return m;
 }
 

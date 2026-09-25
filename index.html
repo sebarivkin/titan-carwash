@@ -497,13 +497,13 @@
   <div class="card"><div class="card-hdr"><span class="card-title">Plus por día de alta demanda</span>
     <button class="btn bp" style="font-size:12px;padding:6px 14px;" onclick="guardarCfgPlus()">Guardar</button></div>
     <div class="card-body">
-      <p style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.6;">Se paga solo, sin marcar nada: los días en que se lavan más autos que el mínimo, cada empleado presente suma el plus a su semana. El medio jornal también lo cobra entero. <strong style="color:var(--amber)">Rige de la fecha elegida en adelante y nunca hacia atrás</strong> (por defecto, desde hoy), para no alterar días ya pagados.</p>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.6;">Se paga solo, sin marcar nada: los días en que se lavan más autos que el mínimo, cada empleado presente suma el plus a su semana. El medio jornal también lo cobra entero. <strong style="color:var(--amber)">Rige de la fecha elegida en adelante y nunca hacia atrás</strong> (por defecto, desde hoy), para no alterar días ya pagados. Las motos no cuentan para el mínimo.</p>
       <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:12px;cursor:pointer;width:max-content;">
         <input type="checkbox" id="cfg-plus-activo" style="width:16px;height:16px;accent-color:var(--cyan);cursor:pointer;"> Activo
       </label>
       <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;">
         <div class="fg" style="max-width:150px;"><label class="lbl">Monto ($)</label><input type="number" id="cfg-plus-monto" placeholder="5000" min="1" style="width:100%;"></div>
-        <div class="fg" style="max-width:170px;"><label class="lbl">Más de … autos</label><input type="number" id="cfg-plus-umbral" placeholder="10" min="1" style="width:100%;"></div>
+        <div class="fg" style="max-width:170px;"><label class="lbl">Más de … autos <span style="color:var(--muted);font-weight:400;">(sin motos)</span></label><input type="number" id="cfg-plus-umbral" placeholder="10" min="1" style="width:100%;"></div>
         <div class="fg" style="max-width:180px;"><label class="lbl">Rige desde</label><input type="date" id="cfg-plus-desde" style="width:100%;"></div>
       </div>
     </div></div>
