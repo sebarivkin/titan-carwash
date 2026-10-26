@@ -138,7 +138,7 @@ let _dowExcl = new Set(JSON.parse(localStorage.getItem('titan_dow_excl') || '[]'
 // Cache local (se actualiza con onSnapshot)
 let cache = {
   usuarios: [], empleados: [], servicios: [], bebidas: [],
-  lavados: [], caja: [], adelantos: [], asistencia: {}, asistMedio: {}, audit: [],
+  lavados: [], caja: [], adelantos: [], asistencia: {}, asistMedio: {}, plusDias: {}, audit: [],
   stockHist: [], semanasPagadas: [], costosFijos: [],
   analisis_cfg: null, plus_cfg: null
 };
@@ -246,10 +246,11 @@ async function loadAllFromFirebase() {
   cache.semanasPagadas = semanasPagadas.docs.map(d=>({id:d.id,...d.data()}));
   cache.costosFijos    = costosFijos.docs.map(d=>({id:d.id,...d.data()}));
   cache.plus_cfg       = plusSnap.exists ? { ...PLUS_DEFAULTS, ...plusSnap.data() } : { ...PLUS_DEFAULTS };
-  cache.asistencia = {}; cache.asistMedio = {};
+  cache.asistencia = {}; cache.asistMedio = {}; cache.plusDias = {};
   asistSnap.docs.forEach(d => {
     cache.asistencia[d.id] = d.data().empleados || [];
     cache.asistMedio[d.id] = d.data().medios || [];
+    if(d.data().plus) cache.plusDias[d.id] = true;
   });
 
   // Solo hacer seed si no hay servicios cargados (primera vez real)
@@ -268,10 +269,11 @@ async function refreshCritical() {
     cache.semanasPagadas = sp.docs.map(d=>({id:d.id,...d.data()}));
     cache.adelantos      = adl.docs.map(d=>({id:d.id,...d.data()}));
     cache.caja           = caja.docs.map(d=>({id:d.id,...d.data()}));
-    cache.asistencia = {}; cache.asistMedio = {};
+    cache.asistencia = {}; cache.asistMedio = {}; cache.plusDias = {};
     asist.docs.forEach(d=>{
       cache.asistencia[d.id] = d.data().empleados||[];
       cache.asistMedio[d.id] = d.data().medios||[];
+      if(d.data().plus) cache.plusDias[d.id] = true;
     });
     await loadPlusCfg(true);
     saveLocalCache();
@@ -522,11 +524,12 @@ function fmtDias(n) {
 }
 
 // ─── PLUS POR DÍA DE ALTA DEMANDA ──────────────────────────────
-// Los días en que se lavan más de N autos, cada empleado presente cobra un plus
-// fijo. Se calcula solo a partir de los lavados y la asistencia — no se marca a
-// mano. Como es calculado y no guardado, `desde` evita que aparezca en semanas
-// que ya se pagaron sin él (ahí el bruto viejo quedó congelado en semanasPagadas).
-const PLUS_DEFAULTS = { activo:false, umbral:10, monto:5000, desde:null };
+// Es MANUAL: el admin marca a mano qué días son "día de plus" (en Empleados).
+// Cada empleado presente ese día suma el monto fijo a su semana. La marca se
+// guarda como `plus:true` en el doc /asistencia/{fecha}; acá solo se configura
+// el monto. Las semanas ya pagadas no se alteran: su bruto quedó congelado en
+// semanasPagadas, así que marcar un día viejo no cambia lo ya cobrado.
+const PLUS_DEFAULTS = { monto:5000 };
 
 function plusCfg() { return cache.plus_cfg || PLUS_DEFAULTS; }
 
@@ -541,9 +544,9 @@ async function loadPlusCfg(force) {
   }
 }
 
-// Vehículos que cuentan para el plus, por fecha. Las motos no suman: dan mucho
-// menos trabajo que un auto, así que un día de motos no es un día movido.
-// Las bebidas tampoco, obviamente.
+// Vehículos que cuentan como "autos" en el resumen del día (para mostrar junto a
+// cada día al marcar el plus). Las motos y bebidas no suman: dan mucho menos
+// trabajo, así que no reflejan un día movido.
 const CAT_SIN_PLUS = ['Bebida', 'Moto'];
 
 function lavadosPorDia() {
@@ -555,32 +558,26 @@ function lavadosPorDia() {
 }
 
 // Plus que le corresponde a UN empleado en UNA fecha (0 o el monto configurado).
+// Manual: solo si el día fue marcado como "día de plus" y el empleado estuvo.
 // Medio jornal cobra el plus entero: se premia el día movido, no las horas.
-function plusDia(fecha, empId, conteo) {
-  const c = plusCfg();
-  if(!c.activo) return 0;
-  if(c.desde && fecha < c.desde) return 0;     // nunca retroactivo
-  if(factorDia(fecha, empId) === 0) return 0;  // no estuvo
-  const autos = (conteo || lavadosPorDia())[fecha] || 0;
-  return autos > c.umbral ? c.monto : 0;
+function plusDia(fecha, empId) {
+  if(factorDia(fecha, empId) === 0) return 0;      // no estuvo
+  return cache.plusDias?.[fecha] ? (plusCfg().monto || 0) : 0;
 }
 
 // Sueldo de la semana de un empleado — el único lugar donde se calcula el bruto.
-// `conteo` es opcional: pasarlo evita rearmar el mapa de autos por cada empleado.
-function brutoSemana(dias, e, conteo) {
-  const cnt      = conteo || lavadosPorDia();
+function brutoSemana(dias, e) {
   const diasTrab = diasTrabajados(dias, e.id);
-  const diasPlus = dias.filter(d => plusDia(d, e.id, cnt) > 0);
-  const plus     = diasPlus.reduce((s,d) => s + plusDia(d, e.id, cnt), 0);
+  const diasPlus = dias.filter(d => plusDia(d, e.id) > 0);
+  const plus     = diasPlus.reduce((s,d) => s + plusDia(d, e.id), 0);
   const jornal   = diasTrab * e.jornal;
   return { diasTrab, jornal, diasPlus, plus, bruto: jornal + plus };
 }
 
 // Costo laboral devengado de todos los empleados en una fecha puntual
-function jornalDia(fecha, conteo) {
-  const cnt = conteo || lavadosPorDia();
+function jornalDia(fecha) {
   return cache.empleados.reduce((s,e) =>
-    s + factorDia(fecha, e.id) * e.jornal + plusDia(fecha, e.id, cnt), 0);
+    s + factorDia(fecha, e.id) * e.jornal + plusDia(fecha, e.id), 0);
 }
 
 // ─── ADELANTOS ─────────────────────────────────────────────────
@@ -2084,6 +2081,31 @@ function renderEmpleados() {
   const semanaPagada = (cache.semanasPagadas||[]).some(sp=>sp.f1===f1&&sp.f2===f2);
   const cntDia = lavadosPorDia();
 
+  // Strip de "días de plus" — tocar un día lo premia para todos los presentes
+  const plusStrip = document.getElementById('emp-plus-strip');
+  if(plusStrip) {
+    const monto = plusCfg().monto || 0;
+    plusStrip.innerHTML = `<div class="card"><div class="card-hdr">
+        <span class="card-title">Días de plus</span>
+        <span style="font-size:11px;color:var(--muted)">tocá un día para dar/quitar el plus de ${fmt(monto)} a todos los presentes</span>
+      </div>
+      <div class="card-body"><div style="display:flex;gap:6px;flex-wrap:wrap;">
+        ${dias.map(d => {
+          const on    = !!cache.plusDias?.[d];
+          const label = DIAS_S[new Date(d+'T12:00').getDay()];
+          const dayN  = new Date(d+'T12:00').getDate();
+          const autos = cntDia[d] || 0;
+          const pres  = (cache.asistencia[d]||[]).length;
+          return `<button class="qd ${on?'on':''}" onclick="togglePlusDia('${d}')"
+            title="${fmtDL(d)} — ${autos} autos · ${pres} presente(s)${on?' · PLUS activo':''}"
+            style="display:flex;flex-direction:column;align-items:center;gap:1px;min-width:54px;padding:6px 8px;">
+            <span style="font-weight:700;font-size:12px;">${on?'⚡ ':''}${label} ${dayN}</span>
+            <span style="font-size:9px;opacity:.7;">${autos} autos</span>
+          </button>`;
+        }).join('')}
+      </div></div></div>`;
+  }
+
   document.getElementById('emp-grid').innerHTML = cache.empleados.map(e => {
     // Adelantos pendientes, incluidos los arrastrados (igual que cerrarSemana)
     const adlSem   = adelantosPendientes(e.id, f2);
@@ -2200,7 +2222,8 @@ window.toggleDia = async function(empId, fecha) {
     medio.splice(medio.indexOf(empId), 1);
   }
 
-  await fsSet('asistencia', fecha, {empleados: pres, medios: medio});
+  // Preservar el flag de "día de plus" — fsSet reescribe el doc entero
+  await fsSet('asistencia', fecha, {empleados: pres, medios: medio, plus: !!cache.plusDias?.[fecha]});
 
   const emp    = cache.empleados.find(e=>e.id===empId);
   const nuevo  = factorDia(fecha, empId);
@@ -2208,6 +2231,22 @@ window.toggleDia = async function(empId, fecha) {
   auditLog('ASISTENCIA', `${emp?.nombre} — ${fmtDL(fecha)} — ${estado}`);
   renderEmpleados();
   renderDashboard(); // refleja deuda acumulada en tiempo real
+};
+
+// Marca/desmarca un día como "día de plus": todos los presentes ese día lo cobran
+window.togglePlusDia = async function(fecha) {
+  if(!cache.plusDias) cache.plusDias = {};
+  const activar = !cache.plusDias[fecha];
+  if(activar) cache.plusDias[fecha] = true; else delete cache.plusDias[fecha];
+  // Reescribe el doc preservando asistencia y medios
+  await fsSet('asistencia', fecha, {
+    empleados: cache.asistencia[fecha] || [],
+    medios:    cache.asistMedio[fecha] || [],
+    plus:      activar
+  });
+  auditLog('PLUS DÍA', `${fmtDL(fecha)} — ${activar ? 'marcado' : 'desmarcado'}`);
+  renderEmpleados();
+  renderDashboard();
 };
 
 window.registrarAdelanto = async function() {
@@ -2900,32 +2939,19 @@ function cargarSaldoEnConfig() {
 
 async function cargarPlusEnConfig() {
   await loadPlusCfg();
-  const c = plusCfg();
-  const set = (id, v) => { const el = document.getElementById(id); if(el) el.value = v; };
-  const chk = document.getElementById('cfg-plus-activo');
-  if(chk) chk.checked = !!c.activo;
-  set('cfg-plus-monto',  c.monto);
-  set('cfg-plus-umbral', c.umbral);
-  set('cfg-plus-desde',  c.desde || hoy());  // por defecto rige de hoy en adelante
+  const el = document.getElementById('cfg-plus-monto');
+  if(el) el.value = plusCfg().monto;
 }
 
 window.guardarCfgPlus = async function() {
   if(!requireAdmin()) return;
-  const activo = !!document.getElementById('cfg-plus-activo')?.checked;
-  const monto  = Number(document.getElementById('cfg-plus-monto')?.value);
-  const umbral = Number(document.getElementById('cfg-plus-umbral')?.value);
-  if(!monto  || monto  <= 0) { toast('Ingresá un monto válido','err'); return; }
-  if(!umbral || umbral <  1) { toast('El mínimo de autos debe ser 1 o más','err'); return; }
-  // Sin fecha de vigencia el plus se aplicaría a días ya pagados y aparecerían
-  // como si quedara plata por cobrar. Por defecto rige de hoy en adelante.
-  const desde = document.getElementById('cfg-plus-desde')?.value || hoy();
-  const data = { activo, monto, umbral, desde };
+  const monto = Number(document.getElementById('cfg-plus-monto')?.value);
+  if(!monto || monto <= 0) { toast('Ingresá un monto válido','err'); return; }
+  const data = { monto };
   try {
     await db.collection('config').doc('plus').set(data, { merge: true });
     cache.plus_cfg = { ...PLUS_DEFAULTS, ...cache.plus_cfg, ...data };
-    await auditLog('CONFIG PLUS', activo
-      ? `${fmt(monto)} por día con más de ${umbral} autos — desde ${fmtDL(desde)}`
-      : 'Plus desactivado');
+    await auditLog('CONFIG PLUS', `Monto del plus: ${fmt(monto)}`);
     toast('Plus guardado ✓','ok');
     cargarPlusEnConfig();
     renderEmpleados(); renderDashboard();
