@@ -1708,7 +1708,10 @@ function renderHistorial() {
         <td>${sanitize(l.pago)}</td>
         <td style="color:var(--green);font-weight:700">${fmt(l.precio)}</td>
         <td style="color:var(--muted2)">${sanitize(l.user||'—')}</td>
-        <td><button class="btn br" onclick="eliminarLavado('${l.id}','${l.fecha}',${l.precio},'${sanitize(l.servicio)}','${sanitize(l.patente||'')}')">✕</button></td>
+        <td><div style="display:flex;gap:4px;">
+          <button class="btn bs" style="padding:5px 9px;" title="Editar" onclick="editarLavado('${l.id}')">✏️</button>
+          <button class="btn br" title="Eliminar" onclick="eliminarLavado('${l.id}','${l.fecha}',${l.precio},'${sanitize(l.servicio)}','${sanitize(l.patente||'')}')">✕</button>
+        </div></td>
       </tr>`).join('') +
       `<tr class="total-row">
         <td colspan="4" style="color:var(--muted);font-size:11px;">${resumenPagos}</td>
@@ -1745,6 +1748,83 @@ window.exportarHistorial = function() {
     lavs.map(l=>[l.fecha,l.hora||'',l.servicio,l.cat||'',l.patente||'',l.pago,l.precio,l.user||'']),
     `historial-${f1}-${f2}.csv`
   );
+};
+
+// Abre el modal de edición con los datos del lavado cargados
+window.editarLavado = function(id) {
+  const lav = cache.lavados.find(l=>l.id===id);
+  if(!lav) { toast('No se encontró el registro','err'); return; }
+  document.getElementById('el-id').value = id;
+
+  // Opciones: lavados + bebidas. Si el servicio actual es personalizado y no
+  // está en ninguna lista, lo agregamos arriba para que quede seleccionado.
+  const lavNombres = sortServicios(cache.servicios).map(s=>s.nombre);
+  const bebNombres = cache.bebidas.map(b=>b.nombre);
+  const existe = lavNombres.includes(lav.servicio) || bebNombres.includes(lav.servicio);
+  const opt = n => `<option value="${sanitize(n)}"${n===lav.servicio?' selected':''}>${sanitize(n)}</option>`;
+  document.getElementById('el-servicio').innerHTML =
+    (existe ? '' : `<option value="${sanitize(lav.servicio)}" selected>${sanitize(lav.servicio)} (personalizado)</option>`) +
+    `<optgroup label="Lavados">${lavNombres.map(opt).join('')}</optgroup>` +
+    `<optgroup label="Bebidas">${bebNombres.map(opt).join('')}</optgroup>`;
+
+  document.getElementById('el-precio').value  = lav.precio;
+  document.getElementById('el-pago').value    = lav.pago || 'Efectivo';
+  document.getElementById('el-patente').value = lav.patente || '';
+  document.getElementById('el-fecha').value   = lav.fecha;
+  openM('m-edit-lav');
+};
+
+// Al cambiar el servicio, sugerir su precio (editable igual)
+window.onEditLavServicio = function() {
+  const nombre = document.getElementById('el-servicio').value;
+  const srv = cache.servicios.find(s=>s.nombre===nombre);
+  const beb = cache.bebidas.find(b=>b.nombre===nombre);
+  const precio = srv?.precio ?? beb?.precio;
+  if(precio != null) document.getElementById('el-precio').value = precio;
+};
+
+// Guarda la edición: actualiza el lavado y su ingreso espejo en caja
+window.guardarEdicionLavado = async function() {
+  const id  = document.getElementById('el-id').value;
+  const lav = cache.lavados.find(l=>l.id===id);
+  if(!lav) { toast('No se encontró el registro','err'); return; }
+
+  const servicio = document.getElementById('el-servicio').value;
+  const precio   = Number(document.getElementById('el-precio').value);
+  const pago     = document.getElementById('el-pago').value;
+  const patente  = document.getElementById('el-patente').value.trim().toUpperCase();
+  const fecha    = document.getElementById('el-fecha').value;
+  if(!servicio)              { toast('Elegí un servicio','err'); return; }
+  if(!precio || precio <= 0) { toast('Ingresá un precio válido','err'); return; }
+  if(!fecha)                 { toast('Elegí una fecha','err'); return; }
+
+  // Categoría según el servicio elegido (bebida, servicio conocido, o la original)
+  const beb = cache.bebidas.find(b=>b.nombre===servicio);
+  const srv = cache.servicios.find(s=>s.nombre===servicio);
+  const cat = beb ? 'Bebida' : (srv ? srv.cat : lav.cat);
+  const esBebida = cat === 'Bebida';
+
+  // Localizar el ingreso de caja asociado por los valores VIEJOS (igual que al borrar)
+  const cm = cache.caja.find(m=>m.tipo==='ingreso'&&m.fecha===lav.fecha&&
+    m.monto===Number(lav.precio)&&(m.desc||'').startsWith(lav.servicio));
+
+  // Actualizar el lavado
+  const datosLav = {fecha, servicio, cat, precio, patente, pago};
+  await fsUpdate('lavados', id, datosLav);
+  Object.assign(lav, datosLav);
+
+  // Actualizar la caja espejo (si se encontró)
+  if(cm) {
+    const desc = `${servicio}${patente ? ' — '+patente : ''}`;
+    const datosCaja = {fecha, cat: esBebida?'Bebidas':'Lavado', desc, monto:precio, pago};
+    await fsUpdate('caja', cm.id, datosCaja);
+    Object.assign(cm, datosCaja);
+  }
+
+  await auditLog('EDITAR LAVADO', `${servicio} — ${fmt(precio)}${patente?' '+patente:''} (${fmtDL(fecha)})`);
+  closeM('m-edit-lav');
+  renderHistorial(); renderCaja(); renderDashboard();
+  toast('Registro actualizado ✓','ok');
 };
 
 window.eliminarLavado = async function(id, fecha, precio, servicio, patente) {
