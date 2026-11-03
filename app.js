@@ -490,7 +490,8 @@ window.go = function(id, btn) {
   if(id==='analisis')  renderAnalisisFinanciero();
   if(id==='config')    {
     // Cada render aislado: si uno falla, los demás igual se ejecutan
-    [renderUsers, renderSrvcfg, renderBebcfg, renderEmpcfg, cargarSaldoEnConfig, cargarPlusEnConfig]
+    [renderUsers, renderSrvcfg, renderBebcfg, renderEmpcfg, cargarSaldoEnConfig, cargarPlusEnConfig,
+     renderSemanasCfg]
       .forEach(fn=>{ try { fn(); } catch(e){ console.error('Error en', fn.name, e); } });
   }
 };
@@ -2492,9 +2493,12 @@ window.cerrarSemana = async function() {
   // Si algo falla a mitad de camino, un reintento choca con la guardia
   // `yaExiste` en lugar de duplicar egresos en caja.
   // `adelantado` = lo efectivamente descontado esta semana; `deuda` = lo que sigue debiendo
-  const pagosEmpleados = datosEmp.map(({e, diasTrab, diasPlus, plus, bruto, cubierto, deuda, neto}) =>
+  // `aplicaciones` guarda cuánto se descontó de CADA adelanto. Es lo que permite
+  // que "volver a pendiente" revierta exacto en lugar de reconstruir el reparto.
+  const pagosEmpleados = datosEmp.map(({e, diasTrab, diasPlus, plus, bruto, cubierto, deuda, neto, aplicaciones}) =>
     ({empId:e.id, nombre:e.nombre, diasTrab, plus, diasPlus:diasPlus.length,
-      bruto, adelantado:cubierto, deuda, neto}));
+      bruto, adelantado:cubierto, deuda, neto,
+      aplicaciones: aplicaciones.map(({a, aplicado}) => ({id:a.id, aplicado}))}));
   const semPagada = {f1, f2, total:totalCaja, fecha:hoy(), user:cu.nombre, empleados:pagosEmpleados};
   const spId = await fsAdd('semanasPagadas', semPagada);
   if(!cache.semanasPagadas) cache.semanasPagadas = [];
@@ -3082,6 +3086,145 @@ window.guardarSaldoInicial = async function() {
   document.getElementById('saldo-actual-txt').textContent = fmt(monto) + ' al ' + fmtDL(fecha);
   renderCaja(); renderDashboard();
   toast('Saldo inicial guardado','ok');
+};
+
+// ─── ANULAR UNA SEMANA PAGADA ──────────────────────────────────
+// Cerrar una semana toca tres cosas: la marca en semanasPagadas, los egresos de
+// sueldos en caja y los adelantos que quedaron saldados. Anular tiene que
+// deshacer las tres o la caja queda descuadrada.
+
+// Egresos que generó el cierre. El id del egreso no se guarda en ningún lado,
+// así que el único vínculo es el rango de fechas que cerrarSemana y
+// pagarBonusSuplementario escriben en la descripción.
+function egresosDeSemana(sp) {
+  const marca = `(${fmtDL(sp.f1)} al ${fmtDL(sp.f2)})`;
+  return cache.caja.filter(m => m.tipo === 'egreso' && m.cat === 'Sueldos' &&
+                                (m.desc || '').includes(marca));
+}
+
+// Adelantos a reabrir. Los cierres nuevos guardan cuánto se aplicó a cada uno y
+// se revierten exacto. Los viejos solo guardaron el total por empleado: ahí se
+// reconstruye con el mismo criterio del cobro (el más viejo primero), que da el
+// mismo reparto salvo que se hayan tocado los adelantos desde el cierre. Por eso
+// esos montos se marcan como estimados en la confirmación.
+function planAnularAdelantos(sp) {
+  const items = [];
+  let faltante = 0;
+  for(const ep of (sp.empleados || [])) {
+    if(ep.aplicaciones) {
+      for(const ap of ep.aplicaciones) {
+        const a = cache.adelantos.find(x => x.id === ap.id);
+        if(a) items.push({a, revertir: ap.aplicado, exacto: true});
+        else   faltante += ap.aplicado;
+      }
+      continue;
+    }
+    let resta = ep.adelantado || 0;
+    if(resta <= 0) continue;
+    const propios = cache.adelantos
+      .filter(a => a.empId === ep.empId && (a.saldado || 0) > 0)
+      .sort((a,b) => (a.fecha||'').localeCompare(b.fecha||''));
+    for(const a of propios) {
+      if(resta <= 0) break;
+      const revertir = Math.min(a.saldado || 0, resta);
+      resta -= revertir;
+      items.push({a, revertir, exacto: false});
+    }
+    faltante += resta;
+  }
+  return {items, faltante};
+}
+
+function renderSemanasCfg() {
+  const box = document.getElementById('cfg-semanas');
+  if(!box) return;
+  const sps = (cache.semanasPagadas || []).slice()
+    .sort((a,b) => (b.f1 || '').localeCompare(a.f1 || ''));
+  if(!sps.length) {
+    box.innerHTML = '<p style="font-size:12px;color:var(--muted2)">Todavía no se cerró ninguna semana.</p>';
+    return;
+  }
+  box.innerHTML = sps.slice(0, 10).map(sp => {
+    const n = (sp.empleados || []).length;
+    return `<div class="erow" style="padding:10px 0;border-bottom:1px solid var(--border);gap:10px;">
+      <div style="min-width:0;">
+        <div style="font-weight:600;font-size:13px;">${fmtDL(sp.f1)} al ${fmtDL(sp.f2)}</div>
+        <div style="color:var(--muted2);font-size:11px;">${fmt(sp.total || 0)} · ${n} empleado${n===1?'':'s'} · cerrada el ${sp.fecha ? fmtDL(sp.fecha) : '—'}${sp.user ? ' por ' + sp.user : ''}</div>
+      </div>
+      <button class="btn br" onclick="anularSemanaPagada('${sp.id}')">Volver a pendiente</button>
+    </div>`;
+  }).join('');
+}
+
+window.anularSemanaPagada = async function(spId) {
+  if(!requireAdmin()) return;
+  const sp = (cache.semanasPagadas || []).find(s => s.id === spId);
+  if(!sp) { toast('No encontré ese pago','err'); return; }
+
+  const egresos  = egresosDeSemana(sp);
+  const totalEgr = egresos.reduce((s,m) => s + (m.monto || 0), 0);
+  const {items, faltante} = planAnularAdelantos(sp);
+  const totalAdl = items.reduce((s,x) => s + x.revertir, 0);
+  // Un intento anterior que quedó a mitad ya pudo reabrir los adelantos:
+  // restarlos de nuevo duplicaría la deuda del empleado.
+  const reintento = !!sp.anulando;
+
+  const l = [`Semana ${fmtDL(sp.f1)} al ${fmtDL(sp.f2)}`, ''];
+  l.push(egresos.length
+    ? `• Se borran ${egresos.length} egreso${egresos.length===1?'':'s'} de sueldos en caja por ${fmt(totalEgr)}`
+    : '• No hay egresos de sueldos de esta semana en caja');
+  if(reintento) {
+    l.push('• Los adelantos NO se tocan: un intento anterior quedó a mitad y ya pudo haberlos reabierto');
+  } else if(items.length) {
+    l.push(`• Se reabren ${items.length} adelanto${items.length===1?'':'s'} por ${fmt(totalAdl)}:`);
+    items.forEach(x => {
+      const e = cache.empleados.find(em => em.id === x.a.empId);
+      l.push(`    ${e ? e.nombre : '?'} — ${fmtDL(x.a.fecha)} · ${fmt(x.revertir)}${x.exacto ? '' : ' (estimado)'}`);
+    });
+  } else {
+    l.push('• No había adelantos saldados en este cierre');
+  }
+  if(faltante > 0)
+    l.push(`\n⚠ Quedan ${fmt(faltante)} de adelantos que no puedo ubicar (se borraron o cambiaron). Revisá Adelantos después.`);
+  if(items.some(x => !x.exacto))
+    l.push('\n⚠ Este cierre no guardó el detalle por adelanto: los montos "estimado" se reconstruyeron. Verificá Adelantos después.');
+  l.push('\nLa semana vuelve a figurar PENDIENTE y se puede cobrar de nuevo.');
+  l.push('\n¿Confirmar?');
+  if(!confirm(l.join('\n'))) return;
+
+  try {
+    // La marca `anulando` va primero: si algo falla a mitad, un segundo intento
+    // sabe que los adelantos ya se reabrieron y no los vuelve a restar.
+    await fsUpdate('semanasPagadas', sp.id, {anulando: true});
+    sp.anulando = true;
+
+    if(!reintento) {
+      for(const {a, revertir} of items) {
+        const campos = {saldado: Math.max(0, (a.saldado || 0) - revertir), pagado: false};
+        await fsUpdate('adelantos', a.id, campos);
+        const ca = cache.adelantos.find(x => x.id === a.id);
+        if(ca) Object.assign(ca, campos);
+      }
+    }
+
+    for(const m of egresos) {
+      await fsDel('caja', m.id);
+      cache.caja = cache.caja.filter(x => x.id !== m.id);
+    }
+
+    await fsDel('semanasPagadas', sp.id);
+    cache.semanasPagadas = cache.semanasPagadas.filter(s => s.id !== sp.id);
+
+    await auditLog('ANULAR SEMANA', `${fmtDL(sp.f1)} al ${fmtDL(sp.f2)} — ${fmt(totalEgr)} devueltos a caja`
+      + (totalAdl > 0 && !reintento ? ` · ${fmt(totalAdl)} de adelantos reabiertos` : ''));
+    renderSemanasCfg(); renderEmpleados(); renderCaja(); renderDashboard();
+    toast('Semana vuelta a pendiente ✓','ok');
+  } catch(e) {
+    console.error(e);
+    toast(e?.code === 'permission-denied'
+      ? 'Sin permiso para anular — hace falta ser admin'
+      : 'Falló la anulación y quedó a medias — revisá caja y adelantos antes de reintentar', 'err');
+  }
 };
 
 function cargarSaldoEnConfig() {

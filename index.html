@@ -503,6 +503,11 @@
         <div class="fg" style="max-width:150px;"><label class="lbl">Monto del plus ($)</label><input type="number" id="cfg-plus-monto" placeholder="5000" min="1" style="width:100%;"></div>
       </div>
     </div></div>
+  <div class="card"><div class="card-hdr"><span class="card-title">Semanas pagadas</span></div>
+    <div class="card-body">
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.6;">Si cerraste una semana por error, acá la devolvés a <strong style="color:var(--amber)">pendiente</strong>: se borran los egresos de sueldos que generó en caja y se reabren los adelantos que había saldado. Antes de ejecutar te muestra exactamente qué va a tocar.</p>
+      <div id="cfg-semanas"></div>
+    </div></div>
   <div class="card"><div class="card-hdr"><span class="card-title">Servicios de lavado</span>
     <div style="display:flex;gap:8px;">
       <button class="btn bs" style="font-size:12px;padding:6px 14px;" onclick="abrirAumento()">↑ Aumentar precios</button>
