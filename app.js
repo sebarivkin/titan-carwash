@@ -2160,6 +2160,8 @@ function renderEmpleados() {
   // Verificar si esta semana ya fue pagada (mismo criterio que dashboard)
   const semanaPagada = (cache.semanasPagadas||[]).some(sp=>sp.f1===f1&&sp.f2===f2);
   const cntDia = lavadosPorDia();
+  // Bonus pendiente en una semana ya pagada (plus marcado después del cierre)
+  let bonusPendiente = 0;
 
   // Strip de "días de plus" — tocar un día lo premia para todos los presentes
   const plusStrip = document.getElementById('emp-plus-strip');
@@ -2209,6 +2211,8 @@ function renderEmpleados() {
       }, 0);
 
     const neto = bruto - totalAdl - yaPagado;
+    // Si la semana ya está paga, lo que exceda lo pagado es bonus nuevo (plus del sábado)
+    if(semanaPagada) bonusPendiente += Math.max(0, bruto - yaPagado);
 
     // Cada botón cicla ausente → jornal completo → medio jornal → ausente
     const diaButtons = dias.map(d => {
@@ -2260,6 +2264,27 @@ function renderEmpleados() {
       </div>
     </div>`;
   }).join('');
+
+  // Botón de pago: según el estado de la semana
+  const btnPS = document.getElementById('btn-pagar-semana');
+  if(btnPS && !_cerrando) {
+    if(semanaPagada && bonusPendiente > 0) {
+      btnPS.textContent = `Pagar bonus (${fmt(bonusPendiente)})`;
+      btnPS.className   = 'btn bg';
+      btnPS.disabled    = false;
+      btnPS.title       = 'La semana ya fue pagada; esto suma el bonus marcado después del cierre';
+    } else if(semanaPagada) {
+      btnPS.textContent = 'Semana pagada';
+      btnPS.className   = 'btn bs';
+      btnPS.disabled    = true;
+      btnPS.title       = '';
+    } else {
+      btnPS.textContent = 'Pagar semana';
+      btnPS.className   = 'btn bg';
+      btnPS.disabled    = false;
+      btnPS.title       = '';
+    }
+  }
 
   // Tabla adelantos
   const adls = [...cache.adelantos].sort((a,b)=>b.fecha?.localeCompare(a.fecha||'')||0);
@@ -2362,6 +2387,59 @@ window.eliminarAdl = async function(id, empId, fecha, monto) {
   renderEmpleados(); renderCaja(); renderDashboard(); toast('Eliminado','ok');
 };
 
+// Pago de BONUS suplementario sobre una semana ya cerrada. Paga solo la
+// diferencia entre el bruto actual (con el plus recién marcado) y lo que ya se
+// pagó, y actualiza el registro de la semana para que no vuelva a figurar.
+async function pagarBonusSuplementario(sp, dias) {
+  const deltas = cache.empleados.map(e => {
+    const {diasTrab, diasPlus, plus, bruto} = brutoSemana(dias, e);
+    const ep = (sp.empleados||[]).find(x=>x.empId===e.id);
+    const brutoPagado = ep ? (ep.bruto ?? ep.neto ?? 0) : 0;
+    return {e, diasTrab, diasPlus, plus, bruto, delta: bruto - brutoPagado};
+  }).filter(x => x.delta > 0);
+
+  if(!deltas.length) {
+    toast(`La semana ${fmtDL(sp.f1)}–${fmtDL(sp.f2)} ya está paga — no hay bonus nuevo para sumar`, 'warn');
+    return;
+  }
+
+  const totalBonus = deltas.reduce((s,x)=>s+x.delta, 0);
+  const lineas = deltas.map(x => `• ${x.e.nombre}: + ${fmt(x.delta)} bonus (${x.diasPlus.length}d de plus)`);
+  lineas.push(`\nTOTAL bonus a descontar de caja: ${fmt(totalBonus)}`);
+  if(!confirm(`BONUS — Semana ${fmtDL(sp.f1)} al ${fmtDL(sp.f2)}\n(ya pagada; esto suma solo el bonus nuevo)\n\n${lineas.join('\n')}\n\n¿Confirmar?`)) return;
+
+  // Registrar el egreso en caja y actualizar el registro de cada empleado
+  const nuevosEmp = (sp.empleados||[]).map(ep => ({...ep}));
+  for(const x of deltas) {
+    const cm = {fecha:hoy(), tipo:'egreso', cat:'Sueldos',
+      desc:`Bonus ${x.e.nombre} — ${x.diasPlus.length}d plus (${fmtDL(sp.f1)} al ${fmtDL(sp.f2)})`,
+      monto:x.delta, pago:'Efectivo', user:cu.nombre};
+    const cmId = await fsAdd('caja', cm);
+    cache.caja.push({id:cmId, ...cm});
+
+    const ep = nuevosEmp.find(y=>y.empId===x.e.id);
+    if(ep) {
+      ep.plus    = x.plus;
+      ep.diasPlus = x.diasPlus.length;
+      ep.bruto   = x.bruto;
+      ep.neto    = (ep.neto || 0) + x.delta;
+    } else {
+      nuevosEmp.push({empId:x.e.id, nombre:x.e.nombre, diasTrab:x.diasTrab,
+        plus:x.plus, diasPlus:x.diasPlus.length, bruto:x.bruto,
+        adelantado:0, deuda:0, neto:x.delta});
+    }
+  }
+
+  const nuevoTotal = (sp.total || 0) + totalBonus;
+  await fsUpdate('semanasPagadas', sp.id, {empleados:nuevosEmp, total:nuevoTotal});
+  const spc = cache.semanasPagadas.find(s=>s.id===sp.id);
+  if(spc) { spc.empleados = nuevosEmp; spc.total = nuevoTotal; }
+
+  await auditLog('BONUS SEMANA', `${fmt(totalBonus)} — ${fmtDL(sp.f1)} al ${fmtDL(sp.f2)}`);
+  renderEmpleados(); renderCaja(); renderDashboard();
+  toast(`✓ Bonus pagado — ${fmt(totalBonus)}`, 'ok');
+}
+
 window.cerrarSemana = async function() {
   if(_cerrando) { toast('Procesando el pago, aguardá un momento...','warn'); return; }
   _cerrando = true;
@@ -2373,16 +2451,18 @@ window.cerrarSemana = async function() {
   const f2  = document.getElementById('sem-fin').value || semFin();
   const dias = diasEnRango(f1, f2);
 
-  // Guardia: no permitir pagar una semana ya cerrada
-  const yaExiste = (cache.semanasPagadas||[]).some(sp=>sp.f1===f1&&sp.f2===f2);
-  if(yaExiste) {
-    toast(`La semana ${fmtDL(f1)}–${fmtDL(f2)} ya fue pagada`, 'warn');
-    return;
-  }
-
   // La config del plus puede haber cambiado desde otro dispositivo: releerla
   // antes de mover plata es el único lugar donde sí podemos esperar.
   await loadPlusCfg(true);
+
+  // Si la semana YA fue pagada, esto es un pago de BONUS suplementario: se paga
+  // solo lo que se sumó después del cierre (p.ej. el plus del sábado, que al
+  // pagar el viernes todavía no se sabía). No vuelve a pagar la semana entera.
+  const yaPagada = (cache.semanasPagadas||[]).find(sp=>sp.f1===f1&&sp.f2===f2);
+  if(yaPagada) {
+    await pagarBonusSuplementario(yaPagada, dias);
+    return;
+  }
 
   // ── Pre-calcular para mostrar resumen antes de confirmar ──────
   const cntDia = lavadosPorDia();
@@ -2474,7 +2554,8 @@ window.cerrarSemana = async function() {
     toast('⚠ Error al procesar el pago. Revisá Caja y Adelantos antes de reintentar.','err');
   } finally {
     _cerrando = false;
-    if(_btnPS) { _btnPS.disabled = false; _btnPS.textContent = 'Pagar semana'; }
+    if(_btnPS) _btnPS.disabled = false;
+    renderEmpleados(); // re-etiqueta el botón según el estado real de la semana
   }
 };
 
