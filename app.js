@@ -2157,8 +2157,12 @@ function renderEmpleados() {
   const dias  = diasEnRango(f1,f2);
   const hoyS  = hoy();
 
-  // Verificar si esta semana ya fue pagada (mismo criterio que dashboard)
-  const semanaPagada = (cache.semanasPagadas||[]).some(sp=>sp.f1===f1&&sp.f2===f2);
+  // Semana ya pagada: se identifica por la fecha de INICIO (lunes), que es el
+  // ancla estable. El fin puede variar un día según cómo se fije el rango
+  // (p.ej. cerrada hasta domingo pero vista hasta sábado), y antes ese desajuste
+  // hacía que la semana figurara como impaga y quisiera cobrarse de nuevo.
+  const spPagada = (cache.semanasPagadas||[]).find(sp=>sp.f1===f1);
+  const semanaPagada = !!spPagada;
   const cntDia = lavadosPorDia();
   // Bonus pendiente en una semana ya pagada (plus marcado después del cierre)
   let bonusPendiente = 0;
@@ -2197,18 +2201,9 @@ function renderEmpleados() {
     const medios   = dias.filter(d=>factorDia(d,e.id)===0.5).length;
     const {diasTrab, jornal, diasPlus, plus, bruto} = brutoSemana(dias, e, cntDia);
 
-    // Descontar lo ya pagado en semanasPagadas (mismo cálculo que dashboard)
-    const semanasVistas = new Set();
-    const yaPagado = (cache.semanasPagadas||[])
-      .filter(sp=>sp.f1>=f1&&sp.f2<=f2)
-      .sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''))
-      .reduce((s,sp)=>{
-        const key = sp.f1+'|'+sp.f2;
-        if(semanasVistas.has(key)) return s;
-        semanasVistas.add(key);
-        const ep = (sp.empleados||[]).find(x=>x.empId===e.id);
-        return s + (ep ? (ep.bruto ?? ep.neto) : 0);
-      }, 0);
+    // Lo ya pagado de esta semana (match por lunes, igual que semanaPagada)
+    const epPagado = spPagada && (spPagada.empleados||[]).find(x=>x.empId===e.id);
+    const yaPagado = epPagado ? (epPagado.bruto ?? epPagado.neto ?? 0) : 0;
 
     const neto = bruto - totalAdl - yaPagado;
     // Si la semana ya está paga, lo que exceda lo pagado es bonus nuevo (plus del sábado)
@@ -2455,10 +2450,11 @@ window.cerrarSemana = async function() {
   // antes de mover plata es el único lugar donde sí podemos esperar.
   await loadPlusCfg(true);
 
-  // Si la semana YA fue pagada, esto es un pago de BONUS suplementario: se paga
-  // solo lo que se sumó después del cierre (p.ej. el plus del sábado, que al
-  // pagar el viernes todavía no se sabía). No vuelve a pagar la semana entera.
-  const yaPagada = (cache.semanasPagadas||[]).find(sp=>sp.f1===f1&&sp.f2===f2);
+  // Si la semana YA fue pagada (match por lunes de inicio), esto es un pago de
+  // BONUS suplementario: se paga solo lo que se sumó después del cierre (p.ej. el
+  // plus del sábado, que al pagar el viernes todavía no se sabía). No vuelve a
+  // pagar la semana entera.
+  const yaPagada = (cache.semanasPagadas||[]).find(sp=>sp.f1===f1);
   if(yaPagada) {
     await pagarBonusSuplementario(yaPagada, dias);
     return;
